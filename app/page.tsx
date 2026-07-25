@@ -183,6 +183,18 @@ export default function Home() {
                   Новое исследование →
                 </Link>
 
+                <Link
+                  href="/guide-test"
+                  className="
+                    app-button-secondary
+                    min-h-16
+                    px-7
+                    text-lg
+                  "
+                >
+                  Тестирование гайда →
+                </Link>
+
                 {hasResearch && (
                   <Link
                     href="/map"
@@ -414,6 +426,56 @@ export default function Home() {
                   </Link>
                 </div>
               )}
+
+              <Link
+                href="/guide-test"
+                className="
+                  editorial-card
+                  mt-6
+                  block
+                  p-7
+                  transition
+                  duration-200
+                  hover:-translate-y-1
+                  hover:shadow-[0_16px_40px_rgba(0,0,0,0.08)]
+                "
+              >
+                <div className="flex items-start justify-between gap-6">
+                  <div>
+                    <p className="eyebrow">Дополнительный инструмент</p>
+
+                    <h2
+                      className="
+                        mt-5
+                        text-2xl
+                        font-black
+                        leading-tight
+                        tracking-[-0.04em]
+                      "
+                    >
+                      Тестирование гайда
+                    </h2>
+
+                    <p className="mt-4 leading-7 text-gray-500">
+                      Проверьте структуру и формулировки гайда глубинного
+                      интервью перед выходом в поле.
+                    </p>
+                  </div>
+
+                  <span className="text-2xl">↗</span>
+                </div>
+
+                <div className="mt-8 flex items-center justify-between gap-4">
+                  <span className="app-badge">
+                    <span className="h-2 w-2 rounded-full bg-blue-600" />
+                    AI-анализ
+                  </span>
+
+                  <span className="text-sm font-bold text-gray-500">
+                    Проверить
+                  </span>
+                </div>
+              </Link>
 
               <div
                 className="
