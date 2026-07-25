@@ -3,7 +3,6 @@
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import Link from "next/link";
@@ -103,8 +102,6 @@ export default function MapPage() {
 
   const [answerError, setAnswerError] =
     useState<string | null>(null);
-
-  const hasAutoOpenedFirstRespondent = useRef(false);
 
   useEffect(() => {
     const storedPopulation =
@@ -294,19 +291,6 @@ export default function MapPage() {
     setQuestion(savedQuestion);
   }, []);
 
-  useEffect(() => {
-    if (
-      hasAutoOpenedFirstRespondent.current ||
-      population.length === 0 ||
-      selected
-    ) {
-      return;
-    }
-
-    hasAutoOpenedFirstRespondent.current = true;
-    setSelected(population[0]);
-  }, [population, selected]);
-
   const visiblePopulation = useMemo(() => {
     if (population.length <= MAX_VISIBLE_POINTS) {
       return population;
@@ -378,30 +362,7 @@ export default function MapPage() {
           question ||
           "Исследовательский вопрос не указан",
       },
-     population.map((person) => ({
-  id: person.id,
-  name: person.name,
-  age: person.age,
-  city: person.city,
-  region: person.region,
-  gender: person.gender,
-  segment:
-    person.segment ||
-    getRespondentSegment(person),
-  education: person.education,
-  employment: person.employment,
-  income: person.income,
-  familyStatus:
-    person.familyStatus,
-  settlementType:
-    person.settlementType,
-  interests: person.interests,
-  values: person.values,
-  opinion: person.opinion,
-  awareness: person.awareness,
-  confidence: person.confidence,
-  answer: person.answer || "",
-}))
+      respondentsForReport
     );
   }, [
     respondentsForReport,
@@ -541,17 +502,24 @@ export default function MapPage() {
         );
         i++
       ) {
-        const generated =
-          await generateInterviewForRespondent(
-            candidates[i]
-          );
+        try {
+          const generated =
+            await generateInterviewForRespondent(
+              candidates[i]
+            );
 
-        updatedPopulation =
-          updatedPopulation.map((person) =>
-            person.id === generated.id
-              ? generated
-              : person
+          updatedPopulation =
+            updatedPopulation.map((person) =>
+              person.id === generated.id
+                ? generated
+                : person
+            );
+        } catch (error) {
+          console.warn(
+            `Не удалось автоматически создать интервью для респондента ${candidates[i].id}:`,
+            error
           );
+        }
       }
 
       setPopulation(updatedPopulation);
@@ -920,18 +888,7 @@ async function generateInterviewForRespondent(
                      * больше быть не должно.
                      */}
                     <span
-                      className="
-                        inline
-                        border-0
-                        bg-transparent
-                        p-0
-                        text-blue-600
-                        shadow-none
-                        outline-none
-                        [border-radius:0]
-                        before:hidden
-                        after:hidden
-                      "
+                      className="inline border-0 bg-transparent p-0 text-blue-600 shadow-none outline-none [border-radius:0] before:hidden after:hidden"
                       style={{
                         background:
                           "transparent",
@@ -1000,8 +957,7 @@ async function generateInterviewForRespondent(
                   </p>
 
                   <p className="mt-1 text-sm text-gray-500">
-                    Нажмите на точку, чтобы
-                    открыть цифровой профиль
+                    Нажмите на любую точку, чтобы открыть профиль респондента.
                   </p>
                 </div>
 
