@@ -67,18 +67,21 @@ export type AIResearchReport = {
   briefConclusions: string[];
 
   distributionAnalysis: string;
+  analyticalOverview?: string;
 
   demographicAnalysis: string[];
 
   supportArguments: string[];
-
   opposeArguments: string[];
-
   neutralArguments: string[];
 
   quotes: AIReportQuote[];
-
   insights: AIReportInsight[];
+
+  unexpectedFindings?: string[];
+  contradictions?: string[];
+  researchHypotheses?: string[];
+  furtherResearch?: string[];
 
   methodology: {
     sampleDescription: string;
