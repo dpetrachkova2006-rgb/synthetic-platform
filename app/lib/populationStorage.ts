@@ -1,111 +1,161 @@
-const KEY = "synthetic_population";
+import type {
+  SyntheticRespondent,
+} from "./syntheticGenerator";
 
+const POPULATION_KEY =
+  "synthetic_population";
 
-export function savePopulation(population:any[]){
+export function savePopulation(
+  population: SyntheticRespondent[]
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
 
+  try {
+    if (!Array.isArray(population)) {
+      throw new Error(
+        "Популяция должна быть массивом."
+      );
+    }
 
-try {
+    const serialized =
+      JSON.stringify(population);
 
+    if (!serialized || serialized === "[]") {
+      localStorage.setItem(
+        POPULATION_KEY,
+        "[]"
+      );
 
-const data = JSON.stringify(population);
+      return;
+    }
 
+    /*
+     * Сначала сохраняем во временный ключ.
+     * Затем проверяем, что JSON читается полностью.
+     */
+    const temporaryKey =
+      `${POPULATION_KEY}_temporary`;
 
+    localStorage.setItem(
+      temporaryKey,
+      serialized
+    );
 
-localStorage.setItem(
+    const savedValue =
+      localStorage.getItem(temporaryKey);
 
-KEY,
+    if (!savedValue) {
+      throw new Error(
+        "Браузер не сохранил данные."
+      );
+    }
 
-data
+    const verification: unknown =
+      JSON.parse(savedValue);
 
-);
+    if (!Array.isArray(verification)) {
+      throw new Error(
+        "Сохранённые данные повреждены."
+      );
+    }
 
+    localStorage.setItem(
+      POPULATION_KEY,
+      savedValue
+    );
 
+    localStorage.removeItem(
+      temporaryKey
+    );
+  } catch (error) {
+    console.error(
+      "Ошибка сохранения популяции:",
+      error
+    );
 
+    localStorage.removeItem(
+      `${POPULATION_KEY}_temporary`
+    );
+
+    throw new Error(
+      error instanceof DOMException &&
+        error.name === "QuotaExceededError"
+        ? "В браузере недостаточно места для сохранения такой большой выборки. Уменьши размер исследования."
+        : "Не удалось сохранить исследование."
+    );
+  }
 }
 
-catch(error){
+export function getPopulation():
+  SyntheticRespondent[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
 
+  const raw =
+    localStorage.getItem(
+      POPULATION_KEY
+    );
 
+  if (!raw || !raw.trim()) {
+    return [];
+  }
 
-console.warn(
-"Слишком большая выборка для localStorage. Сохраняем сокращенную версию."
-);
+  try {
+    const parsed: unknown =
+      JSON.parse(raw);
 
+    if (!Array.isArray(parsed)) {
+      localStorage.removeItem(
+        POPULATION_KEY
+      );
 
+      return [];
+    }
 
+    return parsed.filter(
+      (
+        item
+      ): item is SyntheticRespondent => {
+        return (
+          typeof item === "object" &&
+          item !== null &&
+          typeof (
+            item as Partial<SyntheticRespondent>
+          ).id === "number"
+        );
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Повреждённые данные популяции:",
+      error
+    );
 
-// оставляем максимум 1000 респондентов
+    localStorage.removeItem(
+      POPULATION_KEY
+    );
 
-const shortPopulation =
+    localStorage.removeItem(
+      `${POPULATION_KEY}_temporary`
+    );
 
-population.slice(0,1000);
-
-
-
-localStorage.setItem(
-
-KEY,
-
-JSON.stringify(shortPopulation)
-
-);
-
-
-
+    return [];
+  }
 }
 
+export function clearPopulation(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
 
+  localStorage.removeItem(
+    POPULATION_KEY
+  );
 
-}
-
-
-
-
-
-
-
-export function getPopulation(){
-
-
-
-if(typeof window === "undefined"){
-
-return [];
-
-}
-
-
-
-const data =
-
-localStorage.getItem(KEY);
-
-
-
-if(!data){
-
-return [];
-
-}
-
-
-
-try {
-
-
-return JSON.parse(data);
-
-
-
-}
-
-catch{
-
-
-return [];
-
-}
-
-
-
+  localStorage.removeItem(
+    `${POPULATION_KEY}_temporary`
+  );
 }
