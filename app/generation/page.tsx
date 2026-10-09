@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { generateRespondentsWithAI } from "../lib/syntheticGenerator";
 import { savePopulation } from "../lib/populationStorage";
+import { readStudies, saveStudy } from "../lib/study";
 
 const MIN_SAMPLE_SIZE = 1;
 const MAX_SAMPLE_SIZE = 10_000;
@@ -69,8 +70,11 @@ export default function GenerationPage() {
   const [age, setAge] = useState("Все");
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
     setTopic(localStorage.getItem("research_topic") || "");
     setQuestion(localStorage.getItem("research_question") || "");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const currentStageIndex = useMemo(() => {
@@ -169,6 +173,8 @@ localStorage.setItem(
   String(normalizedSize)
 );
 
+const project = readStudies().find(item => item.researchId === localStorage.getItem("research_id"));
+if (project?.type === "quantitative") saveStudy({ ...project, population });
 savePopulation(population);
 
 setProgress(100);

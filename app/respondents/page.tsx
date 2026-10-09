@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 
 
 
+type Person = { name: string; age: number; city: string; job: string; interests: string[]; values: string[]; opinion: string };
+
 function RespondentsContent() {
 
 
@@ -18,12 +20,12 @@ function RespondentsContent() {
 
   const [search, setSearch] = useState("");
 
-  const [selected, setSelected] = useState<any>(null);
+  const [selected, setSelected] = useState<Person | null>(null);
 
 
 
 
-  const populations:any = {
+  const populations: Record<string, Person[]> = {
 
 
     "Молодежь 18-25":[
@@ -162,7 +164,7 @@ function RespondentsContent() {
 
 
 
-  const filtered = respondents.filter((person:any)=>
+  const filtered = respondents.filter((person: Person)=>
 
 
     person.name
@@ -290,7 +292,7 @@ function RespondentsContent() {
 
 
 
-          {filtered.map((person:any,index:number)=>(
+          {filtered.map((person: Person,index: number)=>(
 
 
 
@@ -484,7 +486,7 @@ function RespondentsContent() {
 
               <p className="italic">
 
-                "{selected.opinion}"
+                &quot;{selected.opinion}&quot;
 
               </p>
 

@@ -21,7 +21,7 @@ params.get("name")
 
 
 
-const respondents:any = {
+const respondents: Record<string, { age: number; city: string; job: string; segment: string; education: string; interests: string[]; behavior: string; quote: string }> = {
 
 
 "Анна":{
@@ -417,7 +417,7 @@ text-xl
 italic
 ">
 
-"{person.quote}"
+&quot;{person.quote}&quot;
 
 </p>
 

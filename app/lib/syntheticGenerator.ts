@@ -59,6 +59,7 @@ export type SyntheticRespondent = {
 };
 
 export type GenerationSettings = {
+  requireAI?: boolean;
   gender?: string;
   age?: string;
 };
@@ -1180,6 +1181,10 @@ export async function generateSyntheticRespondents(
       topic,
       question
     );
+
+  if (settings.requireAI && distributionResult.sourceMode !== "ai-estimate") {
+    throw new Error("AI-генерация выборки недоступна. Повторите попытку позже; резервные результаты не использованы.");
+  }
 
   const opinionWeights =
     convertDistributionToWeights(

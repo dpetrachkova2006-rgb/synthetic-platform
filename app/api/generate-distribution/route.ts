@@ -1,3 +1,4 @@
+import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -55,7 +56,7 @@ function normalizeDistribution(
   value: unknown
 ): OpinionDistribution {
   if (!isRecord(value)) {
-    return FALLBACK_DISTRIBUTION;
+    throw new Error("Модель не вернула корректное распределение.");
   }
 
   const rawValues = {
@@ -89,7 +90,7 @@ function normalizeDistribution(
   );
 
   if (total <= 0) {
-    return FALLBACK_DISTRIBUTION;
+    throw new Error("Модель не вернула корректное распределение.");
   }
 
   const normalizedEntries = Object.entries(
@@ -234,13 +235,13 @@ export async function POST(
     }
 
     const apiKey =
-      process.env.GROQ_API_KEY;
+      getAIKey();
 
     if (!apiKey) {
       return NextResponse.json(
         {
           error:
-            "Переменная GROQ_API_KEY не найдена.",
+            "Не настроен серверный API-ключ.",
         },
         {
           status: 500,
@@ -297,7 +298,7 @@ export async function POST(
 - не заключай JSON в блок кода.
 `;
 
-    const groqResponse = await fetch(
+    const groqResponse = await aiFetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
@@ -312,7 +313,7 @@ export async function POST(
 
         body: JSON.stringify({
           model:
-            "llama-3.3-70b-versatile",
+            getAIModel("llama-3.3-70b-versatile"),
 
           temperature: 0.35,
 
@@ -371,7 +372,7 @@ export async function POST(
 
     if (!isRecord(groqData)) {
       throw new Error(
-        "Groq вернул некорректный ответ."
+        "Сервис генерации вернул некорректный ответ."
       );
     }
 
@@ -387,7 +388,7 @@ export async function POST(
         .content !== "string"
     ) {
       throw new Error(
-        "В ответе Groq отсутствует содержимое."
+        "В ответе сервиса генерации отсутствует содержимое."
       );
     }
 

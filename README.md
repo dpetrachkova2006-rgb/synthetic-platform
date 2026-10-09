@@ -34,3 +34,21 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Free hosted generation (OpenRouter / Netlify)
+
+All seven generation API routes share `app/lib/aiProvider.ts`. To enable the prepared OpenRouter adapter, set **server-only** environment variables locally and in Netlify:
+
+```dotenv
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=<your own key>
+OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+```
+
+Create the key at https://openrouter.ai/settings/keys. Never prefix keys with `NEXT_PUBLIC_` or commit them. Deploy again after setting Netlify variables. The local configuration does not update Netlify automatically.
+
+The adapter accepts only `:free` models (or `openrouter/free`), removes model fallbacks, and caps provider prompt, completion and request pricing at zero. JSON support is required. It returns actionable errors on rejected keys, exhausted limits and unavailable models. It does not retry automatically or switch to a paid model. Groq and xAI remain available through `AI_PROVIDER`.
+
+As checked on 2026-10-09, OpenRouter advertises 50 free requests per day per account. All site visitors share this allowance. One research project can use many requests. Availability and limits can change; a free endpoint is not a guarantee of unrestricted topics. NVIDIA's free endpoint asks users not to upload personal or confidential data; this project should send synthetic profiles only.
+
+Validation: `npm run test:study`, `npx tsc --noEmit`, `npm run lint`, `npm run build`. Provider tests mock completions; successful live generation requires a valid OpenRouter key.

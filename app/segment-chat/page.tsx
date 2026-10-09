@@ -35,7 +35,7 @@ if(!question) return;
 
 
 
-const answers:any = {
+const answers: Record<string, string> = {
 
 
 "AI-энтузиасты":

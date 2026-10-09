@@ -1,3 +1,4 @@
+import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -533,13 +534,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = getAIKey();
 
     if (!apiKey) {
       return NextResponse.json(
         {
           error:
-            "Не найден GROQ_API_KEY. Проверь файл .env.local.",
+            "Не настроен серверный API-ключ. Проверьте настройки сервиса генерации.",
         },
         {
           status: 500,
@@ -567,7 +568,7 @@ export async function POST(request: Request) {
     let groqResponse: Response;
 
     try {
-      groqResponse = await fetch(GROQ_API_URL, {
+      groqResponse = await aiFetch(GROQ_API_URL, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -576,7 +577,7 @@ export async function POST(request: Request) {
         cache: "no-store",
         signal: controller.signal,
         body: JSON.stringify({
-          model,
+          model: getAIModel(model),
           temperature: 0.75,
           top_p: 0.9,
           max_completion_tokens:
@@ -638,14 +639,14 @@ export async function POST(request: Request) {
       ) as GroqResponse;
     } catch {
       console.error(
-        "Groq вернул некорректный ответ:",
+        "Сервис генерации вернул некорректный ответ:",
         rawResponse
       );
 
       return NextResponse.json(
         {
           error:
-            "Groq вернул ответ в неожиданном формате.",
+            "Сервис генерации вернул ответ в неожиданном формате.",
         },
         {
           status: 502,
@@ -669,7 +670,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "Лимит Groq временно превышен. Попробуйте выбрать 3 респондентов или сократить гайд.",
+              "Лимит сервиса генерации временно превышен. Попробуйте выбрать 3 респондентов или сократить гайд.",
           },
           {
             status: 429,
@@ -681,7 +682,7 @@ export async function POST(request: Request) {
         {
           error:
             groqError ||
-            `Groq вернул ошибку ${groqResponse.status}.`,
+            `Сервис генерации вернул ошибку ${groqResponse.status}.`,
         },
         {
           status: groqResponse.status,
@@ -731,7 +732,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       result,
       meta: {
-        model,
+        model: getAIModel(model),
         respondentCount,
       },
     });

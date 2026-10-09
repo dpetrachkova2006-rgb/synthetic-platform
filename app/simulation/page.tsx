@@ -108,7 +108,7 @@ function SimulationContent() {
 
 
 
-  },[]);
+  },[audience, method, name, router, size]);
 
 
 

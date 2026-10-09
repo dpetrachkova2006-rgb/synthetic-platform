@@ -60,6 +60,7 @@ export default function ReportPage() {
     useState(false);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
     try {
       const raw = localStorage.getItem(
         REPORT_STORAGE_KEY
@@ -115,6 +116,8 @@ export default function ReportPage() {
     } finally {
       setIsLoaded(true);
     }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const calculatedOpinionDistribution =

@@ -104,6 +104,7 @@ export default function MapPage() {
     useState<string | null>(null);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
     const storedPopulation =
       getPopulation();
 
@@ -289,6 +290,8 @@ export default function MapPage() {
     setPopulation(normalizedPopulation);
     setTopic(savedTopic);
     setQuestion(savedQuestion);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const visiblePopulation = useMemo(() => {
@@ -397,7 +400,7 @@ export default function MapPage() {
       return;
     }
 
-    setActiveAnalysisStage(0);
+    const resetTimer = window.setTimeout(() => setActiveAnalysisStage(0), 0);
 
     const interval =
       window.setInterval(() => {
@@ -416,6 +419,7 @@ export default function MapPage() {
       }, 1300);
 
     return () => {
+      window.clearTimeout(resetTimer);
       window.clearInterval(interval);
     };
   }, [isGeneratingReport]);

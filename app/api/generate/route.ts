@@ -1,3 +1,4 @@
+import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
 import { NextResponse } from "next/server";
 import { findRelevantResearch } from "../../lib/researchContext";
 
@@ -94,7 +95,7 @@ export async function POST(req: Request) {
     const count = Number(body.count);
     const settings = body.settings || {};
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = getAIKey();
     const model =
       process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            "Не найден GROQ_API_KEY. Проверь файл .env.local и перезапусти сервер.",
+            "Не настроен серверный API-ключ. Проверьте настройки сервиса генерации.",
         },
         { status: 500 }
       );
@@ -315,7 +316,7 @@ ${researchContext}
 }
 `.trim();
 
-    const groqResponse = await fetch(
+    const groqResponse = await aiFetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
@@ -324,7 +325,7 @@ ${researchContext}
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model,
+          model: getAIModel(model),
           temperature: 0.8,
           response_format: {
             type: "json_object",
@@ -354,7 +355,7 @@ ${researchContext}
         {
           error:
             groqData.error?.message ||
-            `Groq вернул ошибку ${groqResponse.status}.`,
+            `Сервис генерации вернул ошибку ${groqResponse.status}.`,
         },
         { status: groqResponse.status }
       );
@@ -365,7 +366,7 @@ ${researchContext}
 
     if (!rawText) {
       console.error(
-        "Groq не вернул содержимое:",
+        "Сервис генерации не вернул содержимое:",
         groqData
       );
 

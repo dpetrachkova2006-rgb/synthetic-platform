@@ -1,19 +1,35 @@
 "use client";
 
 import Link from "next/link";
+import { ChartColumn, MessagesSquare } from "lucide-react";
+import { readStudies } from "./lib/study";
 import { useEffect, useState } from "react";
 
 export default function Home() {
   const [hasResearch, setHasResearch] = useState(false);
   const [topic, setTopic] = useState("");
+  const [researchHref, setResearchHref] = useState("/map");
+  const [researchStatus, setResearchStatus] = useState("Сохранено");
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
     const savedTopic = localStorage.getItem("research_topic");
 
     if (savedTopic) {
       setHasResearch(true);
       setTopic(savedTopic);
     }
+    try {
+      const latest = readStudies().at(-1);
+      if (latest) {
+        setHasResearch(true);
+        setTopic(latest.topic);
+        setResearchHref(latest.type === "quantitative" ? "/map" : `/study?id=${latest.researchId}`);
+        setResearchStatus(latest.report ? "Завершено" : "В работе");
+      }
+    } catch { /* Keep the legacy research accessible if the new store is damaged. */ }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   return (
@@ -172,7 +188,7 @@ export default function Home() {
 
               <div className="mt-10 flex flex-col gap-3 sm:flex-row">
                 <Link
-                  href="/research"
+                  href="#research-methods"
                   className="
                     app-button
                     min-h-16
@@ -197,7 +213,7 @@ export default function Home() {
 
                 {hasResearch && (
                   <Link
-                    href="/map"
+                    href={researchHref}
                     className="
                       app-button-secondary
                       min-h-16
@@ -350,7 +366,7 @@ export default function Home() {
             <div className="mt-14">
               {hasResearch ? (
                 <Link
-                  href="/map"
+                  href={researchHref}
                   className="
                     editorial-card
                     block
@@ -384,7 +400,7 @@ export default function Home() {
                   <div className="mt-10 flex items-center justify-between gap-4">
                     <span className="app-badge">
                       <span className="h-2 w-2 rounded-full bg-blue-600" />
-                      Завершено
+                      {researchStatus}
                     </span>
 
                     <span className="text-sm font-bold text-gray-500">
@@ -413,7 +429,7 @@ export default function Home() {
                   </p>
 
                   <Link
-                    href="/research"
+                    href="#research-methods"
                     className="
                       app-button-dark
                       mt-8
@@ -496,6 +512,23 @@ export default function Home() {
             </div>
           </aside>
         </div>
+        <section id="research-methods" className="border-t border-gray-200 bg-white p-8 sm:p-12">
+          <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Какое исследование вы хотите провести?</h2>
+          <p className="mt-4 max-w-4xl leading-7 text-gray-700">Выберите метод исследования — платформа поможет сформировать выборку, смоделировать ответы респондентов и проанализировать результаты</p>
+          <div className="mt-8 grid gap-5 lg:grid-cols-3">
+            {[
+              { title: "Количественное исследование", description: "Создавайте синтетические выборки, проводите массовые опросы и анализируйте распределения ответов", href: "/research", Icon: ChartColumn },
+              { title: "Качественное исследование", description: "Проводите глубинные интервью с синтетическими респондентами, изучайте их мнения, аргументацию и мотивы", href: "/study?type=qualitative", Icon: MessagesSquare },
+              { title: "Смешанное исследование", description: "Объединяйте массовый опрос и глубинные интервью: исследуйте общие закономерности и подробно изучайте причины полученных результатов", href: "/study?type=mixed", Icon: ChartColumn },
+            ].map(({ title, description, href, Icon }) => <Link key={title} href={href} className="editorial-card group flex h-full flex-col p-7 transition duration-200 hover:-translate-y-1 hover:border-blue-600 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-blue-600">
+              <div className="flex gap-2"><Icon aria-hidden="true" className="h-10 w-10 text-blue-600" />{href.includes("mixed") && <MessagesSquare aria-hidden="true" className="h-10 w-10 text-blue-600" />}</div>
+              <h3 className="mt-6 text-2xl font-black leading-tight">{title}</h3>
+              <p className="mt-4 flex-1 leading-7 text-gray-700">{description}</p>
+              <span className="app-button mt-8 min-h-12 px-4">Начать исследование →</span>
+            </Link>)}
+          </div>
+          <Link href="/study" className="mt-6 inline-block text-sm font-bold text-blue-600">Открыть сохранённые качественные и смешанные проекты →</Link>
+        </section>
       </section>
     </main>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createStudy, saveStudy } from "../lib/study";
 
 export default function ResearchPage() {
   const router = useRouter();
@@ -18,6 +19,15 @@ export default function ResearchPage() {
       return;
     }
 
+    try {
+      const project = createStudy("quantitative", trimmedTopic, trimmedQuestion);
+      saveStudy(project);
+      localStorage.setItem("research_id", project.researchId);
+      localStorage.setItem("research_type", project.type);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Не удалось сохранить проект.");
+      return;
+    }
     localStorage.setItem("research_topic", trimmedTopic);
     localStorage.setItem("research_question", trimmedQuestion);
 
@@ -190,6 +200,13 @@ export default function ResearchPage() {
               </div>
 
               <div className="space-y-8">
+                <label className="block text-sm font-bold">Тип исследования
+                  <select className="app-input mt-3" value="quantitative" onChange={event => router.push(`/study?type=${event.target.value}`)}>
+                    <option value="quantitative">Количественное исследование</option>
+                    <option value="qualitative">Качественное исследование</option>
+                    <option value="mixed">Смешанное исследование</option>
+                  </select>
+                </label>
                 <div>
                   <label
                     htmlFor="research-topic"

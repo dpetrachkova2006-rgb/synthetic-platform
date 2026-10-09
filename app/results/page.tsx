@@ -28,7 +28,7 @@ function ResultsContent() {
 
 
 
-  const data:any = {
+  const data: Record<string, { age: string; accuracy: string; interests: string[]; values: [string, number][]; quotes: string[] }> = {
 
 
     "Молодежь 18-25": {
@@ -530,7 +530,7 @@ function ResultsContent() {
 
                 <p className="mt-4 text-gray-700">
 
-                  "{quote}"
+                  &quot;{quote}&quot;
 
                 </p>
 

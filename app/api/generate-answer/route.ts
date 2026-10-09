@@ -1,3 +1,4 @@
+import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -613,13 +614,13 @@ export async function POST(
       );
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = getAIKey();
 
     if (!apiKey) {
       return NextResponse.json(
         {
           error:
-            "Не найден GROQ_API_KEY. Проверь файл .env.local.",
+            "Не настроен серверный API-ключ. Проверьте настройки сервиса генерации.",
         },
         {
           status: 500,
@@ -649,7 +650,7 @@ export async function POST(
     let groqResponse: Response;
 
     try {
-      groqResponse = await fetch(
+      groqResponse = await aiFetch(
         GROQ_API_URL,
         {
           method: "POST",
@@ -661,7 +662,7 @@ export async function POST(
           cache: "no-store",
           signal: controller.signal,
           body: JSON.stringify({
-            model,
+            model: getAIModel(model),
             temperature:
               respondent.opinion ===
                 "отказывается отвечать" ||
@@ -694,7 +695,7 @@ export async function POST(
         return NextResponse.json(
           {
             error:
-              "Groq не успел сформировать ответ. Повтори попытку.",
+              "Сервис генерации не успел сформировать ответ. Повтори попытку.",
             retryable: true,
           },
           {
@@ -720,7 +721,7 @@ export async function POST(
         );
 
       console.error(
-        "Groq вернул не-JSON ответ:",
+        "Сервис генерации вернул не-JSON ответ:",
         groqResponse.status,
         rawText
       );
@@ -728,7 +729,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Groq вернул ответ в неожиданном формате.",
+            "Сервис генерации вернул ответ в неожиданном формате.",
           retryable: isRetryableStatus(
             groqResponse.status
           ),
@@ -754,7 +755,7 @@ export async function POST(
           groqData.error?.message,
           800
         ) ||
-        `Groq вернул ошибку ${groqResponse.status}.`;
+        `Сервис генерации вернул ошибку ${groqResponse.status}.`;
 
       const retryable =
         isRetryableStatus(
@@ -768,7 +769,7 @@ export async function POST(
         {
           error:
             groqResponse.status === 429
-              ? "Достигнут временный лимит Groq. Повтори генерацию немного позже."
+              ? "Достигнут временный лимит сервиса генерации. Повтори генерацию немного позже."
               : groqMessage,
           retryable,
         },
@@ -793,7 +794,7 @@ export async function POST(
           respondentId: respondent.id,
           answer: fallback,
           meta: {
-            model,
+            model: getAIModel(model),
             fallback: true,
           },
         });
@@ -815,7 +816,7 @@ export async function POST(
       respondentId: respondent.id,
       answer,
       meta: {
-        model,
+        model: getAIModel(model),
         fallback: false,
       },
     });

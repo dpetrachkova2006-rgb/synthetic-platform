@@ -1,3 +1,4 @@
+import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -289,7 +290,7 @@ async function callGroq(input: {
   let response: Response;
 
   try {
-    response = await fetch(GROQ_API_URL, {
+    response = await aiFetch(GROQ_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${input.apiKey}`,
@@ -298,7 +299,7 @@ async function callGroq(input: {
       cache: "no-store",
       signal: controller.signal,
       body: JSON.stringify({
-        model: input.model,
+        model: getAIModel(input.model),
         temperature: input.temperature,
         top_p: 0.9,
         max_completion_tokens: input.maxCompletionTokens,
@@ -343,10 +344,10 @@ async function callGroq(input: {
   try {
     data = JSON.parse(rawText) as GroqResponse;
   } catch {
-    console.error("Groq вернул не-JSON ответ:", response.status, rawText);
+    console.error("Сервис генерации вернул не-JSON ответ:", response.status, rawText);
 
     return {
-      error: "Groq вернул ответ в неожиданном формате.",
+      error: "Сервис генерации вернул ответ в неожиданном формате.",
       status: 502,
     };
   }
@@ -354,14 +355,14 @@ async function callGroq(input: {
   if (!response.ok) {
     const message =
       cleanText(data.error?.message, 1000) ||
-      `Groq вернул ошибку ${response.status}.`;
+      `Сервис генерации вернул ошибку ${response.status}.`;
 
     console.error("Ошибка Groq API:", response.status, data);
 
     return {
       error:
         response.status === 429
-          ? "Лимит Groq временно превышен. Подождите немного или сократите гайд."
+          ? "Лимит сервиса генерации временно превышен. Подождите немного или сократите гайд."
           : message,
       status: response.status,
     };
@@ -425,11 +426,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = getAIKey();
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Не найден GROQ_API_KEY. Проверь файл .env.local." },
+        { error: "Не настроен серверный API-ключ. Проверьте настройки сервиса генерации." },
         { status: 500 }
       );
     }
@@ -443,7 +444,7 @@ export async function POST(request: Request) {
     if (action === "analyze") {
       const groqResult = await callGroq({
         apiKey,
-        model,
+        model: getAIModel(model),
         prompt: buildAnalysisPrompt({
           title,
           topic,

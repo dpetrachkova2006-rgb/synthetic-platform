@@ -1,3 +1,4 @@
+import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -577,14 +578,14 @@ async function fetchGroqReport(
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(GROQ_API_URL, {
+    const response = await aiFetch(GROQ_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: getAIModel(MODEL),
         temperature: 0.2,
         response_format: {
           type: "json_object",
@@ -641,12 +642,12 @@ async function fetchGroqReport(
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = cleanText(process.env.GROQ_API_KEY);
+    const apiKey = cleanText(getAIKey());
 
     if (!apiKey) {
       return NextResponse.json(
         {
-          error: "Переменная GROQ_API_KEY не найдена в .env.local.",
+          error: "Не настроен серверный API-ключ.",
         },
         { status: 500 }
       );
