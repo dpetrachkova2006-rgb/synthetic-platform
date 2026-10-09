@@ -1,7 +1,10 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import ModelingBasis from "../components/ModelingBasis";
+import { getPopulation } from "../lib/populationStorage";
+import type { SyntheticRespondent } from "../lib/syntheticGenerator";
 import Link from "next/link";
 
 
@@ -17,8 +20,7 @@ function ResultsContent() {
     searchParams.get("audience") || "Все респонденты";
 
 
-  const size =
-    searchParams.get("size") || "10000";
+
 
 
   const name =
@@ -28,145 +30,12 @@ function ResultsContent() {
 
 
 
-  const data: Record<string, { age: string; accuracy: string; interests: string[]; values: [string, number][]; quotes: string[] }> = {
+  const [population, setPopulation] = useState<SyntheticRespondent[]>([]);
+  useEffect(() => { const timer=setTimeout(()=>setPopulation(getPopulation()),0);return()=>clearTimeout(timer); },[]);
+  const group = population.filter(p => audience==='Молодежь 18-25' ? p.age>=18&&p.age<=25 : audience==='Предприниматели' ? /предприним|бизнес/i.test(p.employment) : audience==='Родители' ? /дет/i.test(p.familyStatus) : true);
+  const values = [...new Set(group.flatMap(p=>p.values ?? []))].map(v=>[v, group.length ? Math.round(group.filter(p=>p.values?.includes(v)).length*100/group.length) : 0] as [string,number]);
+  const current = { age: group.length ? `${(group.reduce((n,p)=>n+p.age,0)/group.length).toFixed(1)} лет` : 'Нет данных', accuracy: 'Не проверена', interests: [...new Set(group.flatMap(p=>p.interests ?? []))], values, quotes: group.filter(p=>p.answer?.trim()).slice(0,8).map(p=>({id:p.id,answer:p.answer!})) };
 
-
-    "Молодежь 18-25": {
-
-      age:"22 года",
-
-      accuracy:"95%",
-
-      interests:[
-        "Технологии",
-        "Игры",
-        "Музыка",
-        "Образование"
-      ],
-
-      values:[
-        ["Самореализация",82],
-        ["Свобода",75],
-        ["Развитие",71],
-        ["Стабильность",50]
-      ],
-
-      quotes:[
-        "Нейросети помогают мне учиться быстрее",
-        "ИИ — это будущее работы",
-        "Главный страх — зависимость от технологий"
-      ]
-
-    },
-
-
-    "Предприниматели": {
-
-      age:"41 год",
-
-      accuracy:"93%",
-
-
-      interests:[
-        "Бизнес",
-        "Инвестиции",
-        "Экономика",
-        "Технологии"
-      ],
-
-
-      values:[
-        ["Рост бизнеса",85],
-        ["Прибыль",78],
-        ["Свобода",70],
-        ["Стабильность",65]
-      ],
-
-
-      quotes:[
-        "ИИ помогает автоматизировать процессы",
-        "Главный вопрос — эффективность",
-        "Важно сохранить конкурентоспособность"
-      ]
-
-    },
-
-
-
-    "Родители": {
-
-      age:"39 лет",
-
-      accuracy:"92%",
-
-
-      interests:[
-        "Семья",
-        "Образование",
-        "Безопасность",
-        "Здоровье"
-      ],
-
-
-      values:[
-        ["Безопасность",86],
-        ["Семья",82],
-        ["Стабильность",78],
-        ["Развитие детей",70]
-      ],
-
-
-      quotes:[
-        "Главное — чтобы технологии помогали детям",
-        "Нужно контролировать влияние ИИ",
-        "Образование должно меняться"
-      ]
-
-    },
-
-
-
-    "Геймеры": {
-
-      age:"24 года",
-
-      accuracy:"96%",
-
-
-      interests:[
-        "Игры",
-        "Киберспорт",
-        "Стриминг",
-        "Технологии"
-      ],
-
-
-      values:[
-        ["Инновации",88],
-        ["Свобода",77],
-        ["Сообщество",72],
-        ["Развлечение",69]
-      ],
-
-
-      quotes:[
-        "ИИ меняет создание игр",
-        "Персонализация станет важнее",
-        "Игровые миры будут умнее"
-      ]
-
-    }
-
-
-
-  };
-
-
-
-
-
-  const current =
-    data[audience] || data["Молодежь 18-25"];
 
 
 
@@ -201,7 +70,7 @@ function ResultsContent() {
           border-green-200
         ">
 
-          ✓ Исследование завершено
+          Сохранённые модельные данные
 
         </div>
 
@@ -209,7 +78,7 @@ function ResultsContent() {
 
 
 
-        <h1 className="
+        <ModelingBasis /><p className="mt-4 text-sm text-gray-600">Показатели ниже рассчитаны из сохранённых профилей. Ценности и интересы — модельные характеристики, цитаты — сохранённые смоделированные ответы. Это не данные опроса людей.</p><h1 className="
           mt-8
           text-6xl
           font-black
@@ -229,7 +98,7 @@ function ResultsContent() {
 
           Синтетическая популяция:
           {" "}
-          {size} респондентов
+          {group.length} респондентов
 
         </p>
 
@@ -249,7 +118,7 @@ function ResultsContent() {
           {[
             ["Аудитория",audience],
             ["Средний возраст",current.age],
-            ["Точность модели",current.accuracy]
+            ["Репрезентативность",current.accuracy]
 
           ].map(([title,value])=>(
 
@@ -451,7 +320,7 @@ function ResultsContent() {
 
         <Link
 
-          href={`/respondents?audience=${audience}&size=${size}&name=${name}`}
+          href={`/respondents?audience=${audience}&size=${group.length}&name=${name}`}
 
           className="
             mt-10
@@ -508,12 +377,12 @@ function ResultsContent() {
 
 
             {current.quotes.map(
-              (quote:string,index:number)=>(
+              (quote)=>(
 
 
               <div
 
-                key={quote}
+                key={quote.id}
 
                 className="
                   bg-blue-50
@@ -524,13 +393,13 @@ function ResultsContent() {
               >
 
                 <p className="font-bold">
-                  Респондент #{index+1}
+                  Респондент #{quote.id}
                 </p>
 
 
                 <p className="mt-4 text-gray-700">
 
-                  &quot;{quote}&quot;
+                  &quot;{quote.answer}&quot;
 
                 </p>
 

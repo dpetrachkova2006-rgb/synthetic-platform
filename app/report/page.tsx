@@ -1,5 +1,8 @@
 "use client";
 
+import ModelingBasis from "../components/ModelingBasis";
+import PDFReportButton from "../components/PDFReportButton";
+import { readStudies, type Study } from "../lib/study";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -52,6 +55,7 @@ export default function ReportPage() {
   const [population, setPopulation] =
     useState<PopulationItem[]>([]);
 
+  const [pdfStudy, setPDFStudy] = useState<Study | null>(null);
   const [topic, setTopic] = useState("");
   const [question, setQuestion] =
     useState("");
@@ -62,6 +66,8 @@ export default function ReportPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
     try {
+      const current = readStudies().find(p => p.researchId === localStorage.getItem("research_id"));
+      if (current) setPDFStudy({ ...current, population: getPopulation() });
       const raw = localStorage.getItem(
         REPORT_STORAGE_KEY
       );
@@ -387,6 +393,7 @@ export default function ReportPage() {
         }
       `}</style>
 
+      <div className="mx-auto max-w-[1240px]"><ModelingBasis /></div>
       <div className="no-print mx-auto mb-5 flex max-w-[1240px] items-center justify-between gap-4">
         <Link
           href="/map"
@@ -395,13 +402,7 @@ export default function ReportPage() {
           ← Вернуться к карте
         </Link>
 
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="app-button min-h-12 px-6"
-        >
-          Сохранить в PDF
-        </button>
+        {pdfStudy && <div><PDFReportButton study={pdfStudy} /></div>}
       </div>
 
       <article className="report-document mx-auto max-w-[1240px] overflow-hidden rounded-[34px] border border-gray-200 bg-white shadow-[0_30px_100px_rgba(17,17,17,0.10)]">

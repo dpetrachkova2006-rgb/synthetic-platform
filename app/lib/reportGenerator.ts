@@ -1,3 +1,4 @@
+import { budgetedFetch } from "./budgetedFetch";
 export type ReportInput = {
   topic: string;
   question: string;
@@ -801,7 +802,8 @@ function isAIReportResponse(
 
 export async function generateAIResearchReport(
   input: ReportInput,
-  respondents: ReportRespondent[]
+  respondents: ReportRespondent[],
+  signal?: AbortSignal
 ): Promise<AIReportResponse> {
   if (!input.topic.trim()) {
     throw new Error(
@@ -826,10 +828,11 @@ export async function generateAIResearchReport(
     respondents
   );
 
-  const response = await fetch(
+  const response = await budgetedFetch(
     "/api/generate-report",
     {
       method: "POST",
+      signal,
       headers: {
         "Content-Type": "application/json",
       },

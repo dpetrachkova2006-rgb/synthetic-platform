@@ -1,3 +1,4 @@
+import { compactProfile } from "./researchEconomy";
 import type { SyntheticRespondent } from './syntheticGenerator';
 
 export type ResearchType = 'quantitative' | 'qualitative' | 'mixed';
@@ -5,6 +6,10 @@ export type SurveyQuestion = { id: string; text: string; options: string[] };
 export type SurveyResponse = { respondentId: number; answers: Record<string, string> };
 export type InterviewTurn = { question: string; answer: string };
 export type Study = {
+  themes?: { title: string; interpretation: string; quotes: { respondentId: number; question: string; quote: string }[] }[];
+  sources?: { title: string; organization: string; date: string; geography: string; population: string; version: string; retrievedAt: string; application: string; url: string }[];
+  legacy?: Record<string, string>;
+  budget?: { maxRequests: number; maxTokens: number }; usage?: { requests: number; tokens: number; estimated?: boolean };
   version: 1; researchId: string; type: ResearchType; topic: string; question: string;
   createdAt: string; stage: number; population: SyntheticRespondent[];
   questionnaire: SurveyQuestion[]; responses: SurveyResponse[];
@@ -28,12 +33,12 @@ export function saveStudy(study: Study): void {
   const studies = readStudies();
   const index = studies.findIndex(s => s.researchId === study.researchId);
   if (index < 0) studies.push(study); else studies[index] = study;
-  try { localStorage.setItem(STUDY_KEY, JSON.stringify(studies)); }
+  try { localStorage.setItem(STUDY_KEY, JSON.stringify(studies)); if (typeof window !== "undefined") window.dispatchEvent(new Event("research-saved")); }
   catch { throw new Error('Не удалось сохранить проект в браузере. Проверьте свободное место; уменьшите выборку.'); }
 }
 export function validateLinks(study: Study): void {
   const ids = new Set(study.population.map(p => p.id));
-  if (ids.size !== study.population.length || new Set(study.selectedIds).size !== study.selectedIds.length || study.selectedIds.some(id => !ids.has(id)) || study.responses.some(r => !ids.has(r.respondentId)) || Object.keys(study.interviews).some(id => !ids.has(Number(id)))) throw new Error('Нарушена связь респондентов с исходной выборкой.');
+  if (new Set(study.responses.map(r=>r.respondentId)).size !== study.responses.length || ids.size !== study.population.length || new Set(study.selectedIds).size !== study.selectedIds.length || study.selectedIds.some(id => !ids.has(id)) || study.responses.some(r => !ids.has(r.respondentId)) || Object.keys(study.interviews).some(id => !ids.has(Number(id)))) throw new Error('Нарушена связь респондентов с исходной выборкой.');
 }
 export function surveyComplete(study: Study): boolean {
   return study.population.length > 0 && study.questionnaire.length > 0 && study.population.every(p => study.questionnaire.every(q => q.options.includes(study.responses.find(r => r.respondentId === p.id)?.answers[q.id] ?? '')));
@@ -60,5 +65,5 @@ export function distributions(study: Study) {
 export function buildReportEvidence(study: Study, includedIds = study.selectedIds) {
   if (!includedIds.length || new Set(includedIds).size !== includedIds.length || includedIds.some(id => !completedInterviewIds(study).includes(id))) throw new Error('Для отчёта нужны завершённые интервью выбранных участников.');
   const counts = (field: 'gender' | 'city' | 'education' | 'income') => Object.fromEntries([...new Set(study.population.map(p => p[field]))].map(value => [value, study.population.filter(p => p[field] === value).length]));
-  return { researchId: study.researchId, type: study.type, topic: study.topic, question: study.question, createdAt: study.createdAt, sample: { size: study.population.length, age: study.population.length ? [Math.min(...study.population.map(p => p.age)), Math.max(...study.population.map(p => p.age))] : [], gender: counts('gender'), city: counts('city'), education: counts('education'), income: counts('income') }, quantitative: distributions(study), selectionReason: study.selectionReason, interviewCoverage: { selected: study.selectedIds.length, completed: completedInterviewIds(study).length, included: includedIds.length, excludedIds: study.selectedIds.filter(id => !includedIds.includes(id)), preliminary: includedIds.length < study.selectedIds.length }, interviews: includedIds.map(id => ({ respondent: study.population.find(p => p.id === id), survey: study.responses.find(r => r.respondentId === id), transcript: study.interviews[id] ?? [] })) };
+  return { researchId: study.researchId, type: study.type, topic: study.topic, question: study.question, createdAt: study.createdAt, sample: { size: study.population.length, age: study.population.length ? [Math.min(...study.population.map(p => p.age)), Math.max(...study.population.map(p => p.age))] : [], gender: counts('gender'), city: counts('city'), education: counts('education'), income: counts('income') }, quantitative: distributions(study), sources: study.sources ?? [], selectionReason: study.selectionReason, interviewCoverage: { selected: study.selectedIds.length, completed: completedInterviewIds(study).length, included: includedIds.length, excludedIds: study.selectedIds.filter(id => !includedIds.includes(id)), preliminary: includedIds.length < study.selectedIds.length }, interviews: includedIds.map(id => ({ respondent: compactProfile(study.population.find(p => p.id === id)!, 'interview'), survey: study.responses.find(r => r.respondentId === id), transcript: study.interviews[id] ?? [] })) };
 }

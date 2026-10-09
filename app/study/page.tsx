@@ -1,7 +1,12 @@
 'use client';
 
+import { checkBudget, compactProfile, defaultBudget, estimateTokens, estimateStudy, surveyBatchSize } from '../lib/researchEconomy';
+import PDFReportButton from '../components/PDFReportButton';
+import ModelingBasis from '../components/ModelingBasis';
+import { sourcesForFrame, type DataFrame } from '../lib/statisticalData';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { generateRespondentsWithAI } from '../lib/syntheticGenerator';
 import { buildReportEvidence, completedInterviewIds, contrastIds, createStudy, distributions, filterRespondents, guideQuestions, interviewsComplete, readStudies, saveStudy, surveyComplete, TYPE_LABELS, type ResearchType, type SelectionFilter, type Study, type SurveyResponse } from '../lib/study';
 
@@ -9,38 +14,58 @@ const STEPS = ['Количественный этап', 'Отбор респон
 const initialFilter: SelectionFilter = { gender: '', minAge: 18, maxAge: 85, city: '', questionId: '', answer: '' };
 
 export default function StudyPage() {
+  return <Suspense fallback={<main className="p-10">Загрузка проекта…</main>}><StudyContent /></Suspense>;
+}
+function StudyContent() {
+  const searchParams = useSearchParams();
+  const requestedId = searchParams.get('id');
+  const requestedType = searchParams.get('type') === 'qualitative' ? 'qualitative' : 'mixed';
   const [study, setStudy] = useState<Study | null>(null);
   const [ready, setReady] = useState(false);
   const [type, setType] = useState<ResearchType>('mixed');
   const [topic, setTopic] = useState('');
   const [question, setQuestion] = useState('');
+  const [dataFrame, setDataFrame] = useState<DataFrame>('wb-rus-2024');
   const [size, setSize] = useState(30);
   const [gender, setGender] = useState('Все');
   const [age, setAge] = useState('Все');
   const [filter, setFilter] = useState(initialFilter);
   const [contrast, setContrast] = useState(['', '']);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [providerInfo, setProviderInfo] = useState<{provider:string;model:string;priceNote:string;maxPricePerMillion:number|null} | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [projects, setProjects] = useState<Study[]>([]);
   const lock = useRef(false);
+  const controller = useRef<AbortController | null>(null);
+  const currentStudy = useRef<Study | null>(null);
 
   useEffect(() => {
+    controller.current?.abort();
     const timer = window.setTimeout(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
       const saved = readStudies();
-      const loaded = saved.find(s => s.researchId === params.get('id'));
+      const loaded = saved.find(s => s.researchId === requestedId);
       setProjects(saved.filter(p => p.type !== "quantitative"));
-      if (loaded) { setStudy(loaded); setType(loaded.type); setActiveId(loaded.selectedIds[0] ?? null); }
-      else if (params.has('id')) throw new Error('Проект не найден в этом браузере.');
-      else setType(params.get('type') === 'qualitative' ? 'qualitative' : 'mixed');
+      setError('');
+      currentStudy.current = loaded ?? null;
+      setStudy(loaded ?? null);
+      setActiveId(loaded?.selectedIds[0] ?? null);
+      if (loaded) { setType(loaded.type); }
+      else if (requestedId) throw new Error('Проект не найден в этом браузере.');
+      else {
+        setType(requestedType);
+        const raw = localStorage.getItem('study_form_draft_' + requestedType);
+        const draft = raw ? JSON.parse(raw) : {};
+        setTopic(draft.topic || ''); setQuestion(draft.question || '');
+      }
     } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка загрузки.'); }
     setReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [requestedId, requestedType]);
 
+  useEffect(() => { fetch('/api/ai-status').then(r=>r.json()).then(setProviderInfo).catch(()=>{}); return () => controller.current?.abort(); }, []);
   const stage = study?.stage;
   const researchId = study?.researchId;
   useEffect(() => {
@@ -52,6 +77,7 @@ export default function StudyPage() {
 
   function commit(next: Study) {
     saveStudy(next);
+    currentStudy.current = next;
     setStudy(next);
     setProjects(readStudies().filter(p => p.type !== "quantitative"));
     return next;
@@ -62,29 +88,43 @@ export default function StudyPage() {
   }
   async function run(label: string, action: () => Promise<void>) {
     if (lock.current) return;
-    lock.current = true; setBusy(label); setError('');
-    try { await action(); } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка операции.'); }
+    lock.current = true; controller.current = new AbortController(); setBusy(label); setError('');
+    try { await action(); } catch (e) { setError(e instanceof Error && e.name === 'AbortError' ? 'Операция отменена. Уже полученные ответы сохранены; можно продолжить.' : e instanceof Error ? e.message : 'Ошибка операции.'); }
     finally { lock.current = false; setBusy(''); }
   }
   async function api(current: Study, payload: Record<string, unknown>) {
-    const response = await fetch('/api/study', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ researchId: current.researchId, topic: current.topic, question: current.question, ...payload }) });
+    if (controller.current?.signal.aborted) throw new DOMException('Отменено', 'AbortError');
+    const latest = currentStudy.current ?? current;
+    checkBudget(latest, payload, payload.action === 'report' ? 6500 : 6000);
+    const usage = latest.usage ?? { requests: 0, tokens: 0 };
+    const reserved = estimateTokens(payload) + 6000;
+    commit({ ...latest, usage: { ...usage, requests: usage.requests + 1, tokens: usage.tokens + reserved, estimated: true } });
+    if (controller.current?.signal.aborted) throw new DOMException('Отменено', 'AbortError');
+    const response = await fetch('/api/study', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.current?.signal, body: JSON.stringify({ researchId: current.researchId, topic: current.topic, question: current.question, ...payload }) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Ошибка генерации.');
     if (data.researchId !== current.researchId) throw new Error('Ответ относится к другому проекту.');
+    const last = currentStudy.current ?? current;
+    commit({ ...last, usage: { requests: last.usage?.requests ?? 1, tokens: (last.usage?.tokens ?? 0) - reserved + data.usage.tokens, estimated: !!usage.estimated || data.usage.estimated } });
     return data;
   }
+  function draft(nextTopic: string, nextQuestion: string) { localStorage.setItem('study_form_draft_' + type, JSON.stringify({ topic: nextTopic, question: nextQuestion })); window.dispatchEvent(new Event('research-saved')); }
   function start() {
     if (!topic.trim() || !question.trim()) { setError('Заполните тему и исследовательский вопрос.'); return; }
     try {
       const next = commit(createStudy(type, topic.trim(), question.trim()));
+      localStorage.removeItem('study_form_draft_' + type);
       window.history.replaceState(null, '', `/study?id=${next.researchId}`);
     } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка создания.'); }
   }
   async function generate() {
     if (!study) return;
     await run('Формируем выборку…', async () => {
-      const population = await generateRespondentsWithAI(size, study.topic, study.question, { gender, age, requireAI: true });
-      commit({ ...study, population, stage: study.type === 'qualitative' ? 1 : 0 });
+      checkBudget(study, { topic: study.topic, question: study.question }, 3000);
+      const usage = study.usage ?? { requests: 0, tokens: 0 };
+      commit({ ...study, usage: { requests: usage.requests + 1, tokens: usage.tokens + 3000, estimated: true } });
+      const population = await generateRespondentsWithAI(size, study.topic, study.question, { gender, age, dataFrame, requireAI: true, signal: controller.current?.signal }, (done,total)=>setBusy(`Сформировано профилей: ${done} / ${total}`));
+      commit({ ...study, usage: currentStudy.current?.usage, sources: sourcesForFrame(dataFrame, study.topic, study.question), population, stage: study.type === 'qualitative' ? 1 : 0 });
     });
   }
   async function survey() {
@@ -92,10 +132,11 @@ export default function StudyPage() {
     await run('Моделируем ответы анкеты…', async () => {
       let current = study;
       const pending = current.population.filter(p => !current.questionnaire.every(q => q.options.includes(current.responses.find(r => r.respondentId === p.id)?.answers[q.id] ?? '')));
-      for (let offset = 0; offset < pending.length; offset += 5) {
-        const data = await api(current, { action: 'survey', respondents: pending.slice(offset, offset + 5), questionnaire: current.questionnaire });
+      const batchSize = surveyBatchSize(current);
+      for (let offset = 0; offset < pending.length; offset += batchSize) {
+        const data = await api(current, { action: 'survey', respondents: pending.slice(offset, offset + batchSize).map(p=>compactProfile(p)), questionnaire: current.questionnaire });
         const incoming = data.responses as SurveyResponse[];
-        current = commit({ ...current, responses: [...current.responses.filter(r => !incoming.some(n => n.respondentId === r.respondentId)), ...incoming] });
+        current = commit({ ...current, usage: currentStudy.current?.usage, responses: [...current.responses.filter(r => !incoming.some(n => n.respondentId === r.respondentId)), ...incoming] });
         setBusy(`Сохранено ответов: ${current.responses.length} / ${current.population.length}`);
       }
     });
@@ -107,11 +148,12 @@ export default function StudyPage() {
       for (const id of all ? current.selectedIds : [activeId]) {
         const respondent = current.population.find(p => p.id === id);
         if (!respondent || !current.selectedIds.includes(id)) throw new Error('Респондент не выбран из исходной выборки.');
-        for (const q of guideQuestions(current.guide)) {
-          if (current.interviews[id]?.some(t => t.question === q)) continue;
+        const pendingQuestions = guideQuestions(current.guide).filter(q => !current.interviews[id]?.some(t => t.question === q && t.answer.trim()));
+        for (let offset = 0; offset < pendingQuestions.length; offset += 8) {
+          const questions = pendingQuestions.slice(offset, offset + 8);
           const response = current.responses.find(r => r.respondentId === id);
-          const data = await api(current, { action: 'interview', respondent, interviewQuestion: q, history: current.interviews[id] ?? [], survey: current.questionnaire.map(item => ({ question: item.text, answer: response?.answers[item.id] ?? '' })) });
-          current = commit({ ...current, report: '', interviews: { ...current.interviews, [id]: [...(current.interviews[id] ?? []), { question: q, answer: data.answer }] } });
+          const data = await api(current, { action: 'interviewBatch', respondent: compactProfile(respondent, 'interview'), questions, history: current.interviews[id] ?? [], survey: current.questionnaire.map(item => ({ question: item.text, answer: response?.answers[item.id] ?? '' })) });
+          current = commit({ ...current, usage: currentStudy.current?.usage, report: '', interviews: { ...current.interviews, [id]: [...(current.interviews[id] ?? []), ...data.turns] } });
           setBusy(`Интервью #${id}: ${current.interviews[id].length} / ${guideQuestions(current.guide).length}`);
         }
       }
@@ -123,7 +165,7 @@ export default function StudyPage() {
       if (preliminary ? study.type !== 'qualitative' || !completedInterviewIds(study).length : !interviewsComplete(study) || (study.type === 'mixed' && !surveyComplete(study))) throw new Error('Сначала завершите необходимые интервью и опрос.');
       const includedIds = preliminary ? completedInterviewIds(study) : study.selectedIds;
       const data = await api(study, { action: 'report', evidence: buildReportEvidence(study, includedIds) });
-      commit({ ...study, report: data.report, reportRespondentIds: includedIds });
+      commit({ ...study, usage: currentStudy.current?.usage, report: data.report, themes: data.themes ?? [], reportRespondentIds: includedIds });
     });
   }
   function download() {
@@ -140,6 +182,7 @@ export default function StudyPage() {
   const validGuide = guide.length > 0 && guide.length <= 30 && new Set(guide).size === guide.length && guide.every(q => q.length <= 2000);
   const completedIds = study ? completedInterviewIds(study) : [];
   const remainingIds = study?.selectedIds.filter(id => !completedIds.includes(id)) ?? [];
+  const estimate = study ? estimateStudy(study, study.population.length || size) : null;
   const field = 'app-input mt-2';
   const button = 'app-button min-h-12 px-5';
   if (!ready) return <main className="p-10">Загрузка проектов…</main>;
@@ -154,8 +197,8 @@ export default function StudyPage() {
           <p className="mt-3 text-gray-700">{type === 'mixed' ? 'Один проект: массовый опрос, отбор участников и интервью из той же выборки.' : 'Сформируйте группу и проведите глубинные интервью.'}</p>
           <div className="mt-8 grid max-w-3xl gap-6">
             <label>Тип исследования<select className={field} value={type} onChange={e => setType(e.target.value as ResearchType)}><option value="mixed">Смешанное</option><option value="qualitative">Качественное</option></select></label>
-            <label>Тема<input className={field} maxLength={1000} value={topic} onChange={e => setTopic(e.target.value)} /></label>
-            <label>Исследовательский вопрос<textarea className={field} maxLength={2000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
+            <label>Тема<input className={field} maxLength={1000} value={topic} onChange={e => { setTopic(e.target.value); draft(e.target.value, question); }} /></label>
+            <label>Исследовательский вопрос<textarea className={field} maxLength={2000} value={question} onChange={e => { setQuestion(e.target.value); draft(topic, e.target.value); }} /></label>
             <button className={button} onClick={start}>Создать проект</button>
           </div>
           {!!projects.length && <div className="mt-10"><h2 className="text-xl font-black">Сохранённые проекты</h2><ul className="mt-4 space-y-3">{projects.map(p => <li key={p.researchId}><a href={`/study?id=${p.researchId}`} className="text-blue-600 underline">{p.topic} · {TYPE_LABELS[p.type]}</a></li>)}</ul></div>}
@@ -166,10 +209,17 @@ export default function StudyPage() {
             const disabled = !!busy || (index === 1 && !study.population.length) || (index >= 1 && study.type !== 'qualitative' && !surveyComplete(study)) || (index >= 2 && (!study.selectedIds.length || !study.selectionReason.trim()));
             return <button key={step} disabled={disabled} aria-current={study.stage === index ? 'step' : undefined} onClick={() => update({ stage: index })} className={`rounded-xl border p-4 text-left text-sm font-bold ${study.stage === index ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-200'} disabled:opacity-40`}>{index + 1}. {index === 0 && study.type === 'qualitative' ? 'Группа респондентов' : step}</button>;
           })}</nav>
+          <aside className="my-5 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm">
+            <p>Оценка по текущей анкете и выбранным участникам: {estimate?.requests} запросов, около {estimate?.tokens.toLocaleString('ru')} токенов (приблизительно, без скрытых рассуждений модели). {providerInfo ? `${providerInfo.provider} / ${providerInfo.model}: ${providerInfo.priceNote}.` : 'Тариф сервера уточняется…'}</p>
+            <p className="mt-2">{providerInfo?.maxPricePerMillion !== null && providerInfo?.maxPricePerMillion !== undefined ? `Ориентир стоимости оценки: до $${((estimate?.tokens ?? 0)*providerInfo.maxPricePerMillion/1000000).toFixed(4)} по серверному тарифу; точное потребление зависит от модели.` : "Для денежной оценки платных моделей нужен серверный тариф за миллион токенов."}</p><p className="mt-2">Использовано: {study.usage?.requests ?? 0} запросов; {study.usage?.tokens ?? 0} токенов{study.usage?.estimated ? ' (оценка)' : ''}. Параллельность: 1. Результаты сохраняются после каждого пакета; повторяются только незавершённые пакеты.</p>
+            <div className="mt-3 flex flex-wrap gap-4"><label>Бюджет запросов <input aria-label="Бюджет запросов" type="number" min="1" max="1000" value={study.budget?.maxRequests ?? defaultBudget.maxRequests} onChange={e => update({ budget: { ...(study.budget ?? defaultBudget), maxRequests: Math.max(1, Math.min(1000, Number(e.target.value) || 1)) } })} className="w-24 rounded border p-2" /></label><label>Бюджет токенов <input aria-label="Бюджет токенов" type="number" min="10000" max="1000000" step="10000" value={study.budget?.maxTokens ?? defaultBudget.maxTokens} onChange={e => update({ budget: { ...(study.budget ?? defaultBudget), maxTokens: Math.max(10000, Math.min(1000000, Number(e.target.value) || 10000)) } })} className="w-32 rounded border p-2" /></label></div>
+            {!!busy && <button className="mt-3 underline" onClick={() => controller.current?.abort()}>Отменить генерацию</button>}
+          </aside>
           <fieldset id="study-stage" tabIndex={-1} disabled={!!busy} className="min-w-0 disabled:opacity-70">
           {study.stage === 0 && <div className="space-y-8">
             <h2 className="text-2xl font-black">{study.type === 'qualitative' ? 'Создание группы' : 'Выборка и анкета'}</h2>
             {!study.population.length ? <><div className="grid gap-5 sm:grid-cols-3">
+              <label className="sm:col-span-3">Основа выборки<select className={field} value={dataFrame} onChange={e=>setDataFrame(e.target.value as DataFrame)}><option value="wb-rus-2024">Россия 20–79 лет: World Bank / ООН, 2024</option><option value="modeled">Модельные характеристики без статистической калибровки</option></select><span className="mt-2 block text-sm text-gray-500">При использовании статистики возраст ограничен 20–79 годами; фильтры применяются внутри этой рамки. Возраст внутри пятилетнего интервала моделируется равномерно, города и прочие характеристики — модельные.</span></label>
               <label>Размер выборки (1–500)<input className={field} type="number" min={1} max={500} value={size} onChange={e => setSize(Number(e.target.value))} /></label>
               <label>Пол<select className={field} value={gender} onChange={e => setGender(e.target.value)}><option>Все</option><option>женщина</option><option>мужчина</option></select></label>
               <label>Возраст<select className={field} value={age} onChange={e => setAge(e.target.value)}>{['Все', '18–25', '26–40', '41–60', '61–85'].map(v => <option key={v}>{v}</option>)}</select></label>
@@ -242,7 +292,7 @@ export default function StudyPage() {
             <h3 className="text-xl font-black">Анкета и интервью каждого участника</h3>{study.selectedIds.map(id => <details className="editorial-card p-5" key={id}><summary className="cursor-pointer font-bold">#{id} {study.population.find(p => p.id === id)?.name}</summary><div className="mt-4"><Comparison study={study} id={id} /></div></details>)}
             <p className="text-sm text-gray-500">Все ответы синтетические. Эти результаты не заменяют эмпирическое исследование и не позволяют оценить реальное общественное мнение.</p>
           </div>}
-          <div className="mt-10 flex flex-wrap gap-4 border-t border-gray-200 pt-6"><button className="app-button-secondary min-h-12 px-5" onClick={download}>Скачать проект и результаты JSON</button><a href={`/study?type=${study.type}`} className="app-button-secondary min-h-12 px-5">Новый проект</a></div>
+          <ModelingBasis study={study} /><PDFReportButton study={study} allowPartial /><div className="mt-10 flex flex-wrap gap-4 border-t border-gray-200 pt-6"><button className="app-button-secondary min-h-12 px-5" onClick={download}>Резервная копия проекта JSON</button><a href={`/study?type=${study.type}`} className="app-button-secondary min-h-12 px-5">Новый проект</a></div>
           </fieldset>
         </>}
       </div>

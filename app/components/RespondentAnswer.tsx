@@ -1,5 +1,6 @@
 "use client";
 
+import { budgetedFetch } from "../lib/budgetedFetch";
 import { useState } from "react";
 import type {
   SyntheticRespondent,
@@ -49,7 +50,7 @@ export default function RespondentAnswer({
     setError(null);
 
     try {
-      const response = await fetch(
+      const response = await budgetedFetch(
         "/api/generate-answer",
         {
           method: "POST",

@@ -3,8 +3,12 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import ModelingBasis from "../components/ModelingBasis";
+import BudgetControls from "../components/BudgetControls";
+import { budgetedFetch } from "../lib/budgetedFetch";
 import Link from "next/link";
 
 import {
@@ -56,11 +60,8 @@ const MAX_MOBILE_RESPONDENTS = 40;
 
 const ANALYSIS_STAGES = [
   "Подготовка данных выборки",
-  "Анализ распределения мнений",
-  "Анализ социально-демографических групп",
-  "Кластеризация интервью",
-  "Выделение основных аргументов",
-  "Поиск закономерностей и инсайтов",
+  "Получение недостающих ответов",
+  "Анализ сохранённых данных",
   "Формирование аналитического отчёта",
 ];
 
@@ -102,6 +103,10 @@ export default function MapPage() {
 
   const [answerError, setAnswerError] =
     useState<string | null>(null);
+
+  const reportController = useRef<AbortController | null>(null);
+  const [reportProgress, setReportProgress] = useState('');
+  useEffect(() => () => reportController.current?.abort(), []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -395,35 +400,6 @@ export default function MapPage() {
     (opinionDistribution
       ?.fullyOppose ?? 0);
 
-  useEffect(() => {
-    if (!isGeneratingReport) {
-      return;
-    }
-
-    const resetTimer = window.setTimeout(() => setActiveAnalysisStage(0), 0);
-
-    const interval =
-      window.setInterval(() => {
-        setActiveAnalysisStage(
-          (current) => {
-            if (
-              current >=
-              ANALYSIS_STAGES.length - 1
-            ) {
-              return current;
-            }
-
-            return current + 1;
-          }
-        );
-      }, 1300);
-
-    return () => {
-      window.clearTimeout(resetTimer);
-      window.clearInterval(interval);
-    };
-  }, [isGeneratingReport]);
-
   function getRespondentSegment(
     person: Respondent
   ): string {
@@ -469,6 +445,7 @@ export default function MapPage() {
   async function createAIReport() {
   if (
     isGeneratingReport ||
+    reportController.current ||
     population.length === 0
   ) {
     return;
@@ -479,6 +456,9 @@ export default function MapPage() {
   setReport(null);
   setReportMeta(null);
   setActiveAnalysisStage(0);
+  reportController.current = new AbortController();
+  const signal = reportController.current.signal;
+  setReportProgress('Подготавливаем сохранённую выборку.');
 
   try {
     let updatedPopulation = [...population];
@@ -489,6 +469,7 @@ export default function MapPage() {
       );
 
     if (existingInterviews.length < 5) {
+      setActiveAnalysisStage(1);
       const missing =
         5 - existingInterviews.length;
 
@@ -506,10 +487,10 @@ export default function MapPage() {
         );
         i++
       ) {
-        try {
+          signal.throwIfAborted();
           const generated =
             await generateInterviewForRespondent(
-              candidates[i]
+              candidates[i], signal
             );
 
           updatedPopulation =
@@ -518,18 +499,18 @@ export default function MapPage() {
                 ? generated
                 : person
             );
-        } catch (error) {
-          console.warn(
-            `Не удалось автоматически создать интервью для респондента ${candidates[i].id}:`,
-            error
-          );
-        }
+          setPopulation(updatedPopulation);
+          savePopulation(updatedPopulation);
+          setReportProgress(`Сохранено ответов: ${existingInterviews.length + i + 1} / ${Math.min(5, updatedPopulation.length)}.`);
       }
 
       setPopulation(updatedPopulation);
       savePopulation(updatedPopulation);
     }
 
+    signal.throwIfAborted();
+    setActiveAnalysisStage(2);
+    setReportProgress('Модель анализирует сохранённые ответы.');
     const result =
       await generateAIResearchReport(
         {
@@ -564,7 +545,7 @@ export default function MapPage() {
           awareness: person.awareness,
           confidence: person.confidence,
           answer: person.answer || "",
-        }))
+        })), signal
       );
 
       setReport(result.report);
@@ -580,12 +561,15 @@ export default function MapPage() {
       );
     } catch (error) {
       setReportError(
-        error instanceof Error
+        error instanceof Error && error.name === 'AbortError'
+          ? 'Анализ отменён. Полученные ответы сохранены; повторный запуск продолжит с недостающих.'
+          : error instanceof Error
           ? error.message
           : "Не удалось сформировать аналитический отчёт."
       );
     } finally {
       setIsGeneratingReport(false);
+      reportController.current = null;
     }
   }
 
@@ -680,7 +664,8 @@ export default function MapPage() {
     return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
   }
 async function generateInterviewForRespondent(
-  respondent: Respondent
+  respondent: Respondent,
+  signal?: AbortSignal
 ): Promise<Respondent> {
   const respondentForRequest = {
     ...respondent,
@@ -731,10 +716,11 @@ async function generateInterviewForRespondent(
       "нейтральная позиция",
   };
 
-  const response = await fetch(
+  const response = await budgetedFetch(
     "/api/generate-answer",
     {
       method: "POST",
+      signal,
       headers: {
         "Content-Type": "application/json",
       },
@@ -1278,7 +1264,7 @@ async function generateInterviewForRespondent(
                       >
                         <span>
                           <span className="block text-base">Сформировать отчёт</span>
-                          <span className="mt-1 block text-xs font-medium text-blue-100">Анализ займёт один запуск модели</span>
+                          <span className="mt-1 block text-xs font-medium text-blue-100">Один запрос анализа и до пяти запросов на недостающие ответы</span>
                         </span>
                         <span className="text-2xl">→</span>
                       </button>
@@ -1360,6 +1346,8 @@ async function generateInterviewForRespondent(
                 <h3 className="mt-3 text-2xl font-black tracking-[-0.04em]">
                   Формируем отчёт
                 </h3>
+                <p role="status" className="mt-3 text-sm">{reportProgress}</p>
+                <button className="mt-4 rounded-xl border border-blue-600 px-4 py-2 text-sm font-bold" onClick={() => reportController.current?.abort()}>Отменить анализ</button>
 
                 <div className="mt-6 space-y-4">
                   {ANALYSIS_STAGES.map(
@@ -1410,6 +1398,7 @@ async function generateInterviewForRespondent(
               </section>
             )}
 
+            <BudgetControls /><ModelingBasis />
             {reportError && (
               <section className="mt-8 rounded-[18px] border border-red-200 bg-red-50 p-6 text-red-700">
                 <p className="font-black">

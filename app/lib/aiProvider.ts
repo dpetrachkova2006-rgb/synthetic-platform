@@ -21,6 +21,11 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise
   headers.set('Authorization', `Bearer ${config.apiKey}`);
   headers.set('Content-Type', 'application/json');
   const payload = JSON.parse(String(options.body));
+  const limit = Number(process.env.AI_MAX_REQUEST_TOKENS || 60000);
+  if (!Number.isFinite(limit) || limit < 2000) throw new Error('Некорректный серверный AI_MAX_REQUEST_TOKENS.');
+  const estimatedInput = Math.ceil(JSON.stringify(payload.messages ?? []).length / 2);
+  const outputLimit = Number(payload.max_completion_tokens ?? payload.max_tokens ?? 4500);
+  if (estimatedInput + outputLimit > limit) throw new Error('Запрос превышает серверный бюджет токенов. Уменьшите контекст, гайд или число интервью.');
   if (config.provider !== 'groq') {
     payload.model = config.model;
     if (payload.max_completion_tokens !== undefined) {
@@ -31,6 +36,9 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise
   if (config.provider === 'openrouter') {
     if (!config.model.endsWith(':free') && config.model !== 'openrouter/free') {
       throw new Error('Для OpenRouter разрешены только бесплатные модели с суффиксом :free.');
+    }
+    if (config.model.startsWith('nvidia/nemotron-3-super') && !payload.reasoning) {
+      payload.reasoning = { max_tokens: Math.max(128, Math.min(Number(process.env.OPENROUTER_REASONING_TOKENS || 512), Math.floor((payload.max_tokens ?? 4500) / 4))), exclude: true };
     }
     // Never silently route this project to a paid model or provider.
     delete payload.models;

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { beginNewQuantitative } from "../lib/projectNavigation";
+import { useEffect } from "react";
 import { createStudy, saveStudy } from "../lib/study";
 
 export default function ResearchPage() {
@@ -10,6 +12,8 @@ export default function ResearchPage() {
   const [topic, setTopic] = useState("");
   const [question, setQuestion] = useState("");
 
+  useEffect(() => { const timer = setTimeout(() => { const draft = localStorage.getItem('research_form_draft'); if (draft) { try { const data = JSON.parse(draft); setTopic(data.topic || ''); setQuestion(data.question || ''); } catch {} } }, 0); return () => clearTimeout(timer); }, []);
+  function saveDraft(nextTopic: string, nextQuestion: string) { localStorage.setItem('research_form_draft', JSON.stringify({ topic: nextTopic, question: nextQuestion })); window.dispatchEvent(new Event('research-saved')); }
   function startResearch() {
     const trimmedTopic = topic.trim();
     const trimmedQuestion = question.trim();
@@ -20,6 +24,7 @@ export default function ResearchPage() {
     }
 
     try {
+      beginNewQuantitative();
       const project = createStudy("quantitative", trimmedTopic, trimmedQuestion);
       saveStudy(project);
       localStorage.setItem("research_id", project.researchId);
@@ -31,6 +36,7 @@ export default function ResearchPage() {
     localStorage.setItem("research_topic", trimmedTopic);
     localStorage.setItem("research_question", trimmedQuestion);
 
+    localStorage.removeItem("research_form_draft");
     router.push("/generation");
   }
 
@@ -226,7 +232,7 @@ export default function ResearchPage() {
                     id="research-topic"
                     type="text"
                     value={topic}
-                    onChange={(event) => setTopic(event.target.value)}
+                    onChange={(event) => { setTopic(event.target.value); saveDraft(event.target.value, question); }}
                     placeholder="Например: отношение к Telegram"
                     className="app-input mt-3"
                   />
@@ -250,7 +256,7 @@ export default function ResearchPage() {
                   <textarea
                     id="research-question"
                     value={question}
-                    onChange={(event) => setQuestion(event.target.value)}
+                    onChange={(event) => { setQuestion(event.target.value); saveDraft(topic, event.target.value); }}
                     placeholder="Например: как пользователи относятся к использованию Telegram в повседневной жизни?"
                     className="app-input mt-3 min-h-40 resize-none"
                   />

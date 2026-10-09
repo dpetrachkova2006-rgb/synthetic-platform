@@ -1,3 +1,4 @@
+import { demographicCells, drawDemographic, type DataFrame } from "./statisticalData";
 import {
   convertDistributionToWeights,
   generateOpinionDistribution,
@@ -59,7 +60,9 @@ export type SyntheticRespondent = {
 };
 
 export type GenerationSettings = {
+  dataFrame?: DataFrame;
   requireAI?: boolean;
+  signal?: AbortSignal;
   gender?: string;
   age?: string;
 };
@@ -1079,10 +1082,9 @@ function createRespondent(
     settings.age
   );
 
-  const gender =
-    generateGender(forcedGender);
-
-  const age = generateAge(ageRange);
+  const demographic = settings.dataFrame === "wb-rus-2024" ? drawDemographic(forcedGender ?? undefined, ageRange) : null;
+  const gender = demographic?.gender ?? generateGender(forcedGender);
+  const age = demographic?.age ?? generateAge(ageRange);
   const city = weightedCity();
 
   const education =
@@ -1176,10 +1178,12 @@ export async function generateSyntheticRespondents(
     question
   );
 
+  if(settings.dataFrame === "wb-rus-2024") demographicCells(normalizeGenderSetting(settings.gender) ?? undefined, parseAgeRange(settings.age));
   const distributionResult =
     await generateOpinionDistribution(
       topic,
-      question
+      question,
+      settings.signal
     );
 
   if (settings.requireAI && distributionResult.sourceMode !== "ai-estimate") {
@@ -1191,10 +1195,6 @@ export async function generateSyntheticRespondents(
       distributionResult.distribution
     );
 
-  console.info(
-    "Распределение мнений:",
-    distributionResult
-  );
 
   const respondents: SyntheticRespondent[] =
     [];
@@ -1212,6 +1212,7 @@ export async function generateSyntheticRespondents(
     start < count;
     start += chunkSize
   ) {
+    if (settings.signal?.aborted) throw new DOMException('Отменено', 'AbortError');
     const end = Math.min(
       start + chunkSize,
       count

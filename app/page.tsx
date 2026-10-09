@@ -24,7 +24,7 @@ export default function Home() {
       if (latest) {
         setHasResearch(true);
         setTopic(latest.topic);
-        setResearchHref(latest.type === "quantitative" ? "/map" : `/study?id=${latest.researchId}`);
+        setResearchHref(latest.type === "quantitative" ? "/studies" : `/study?id=${latest.researchId}`);
         setResearchStatus(latest.report ? "Завершено" : "В работе");
       }
     } catch { /* Keep the legacy research accessible if the new store is damaged. */ }

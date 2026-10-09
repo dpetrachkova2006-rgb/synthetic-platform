@@ -572,7 +572,8 @@ function buildSystemPrompt(): string {
 
 async function fetchGroqReport(
   apiKey: string,
-  userPrompt: string
+  userPrompt: string,
+  signal: AbortSignal
 ): Promise<GroqResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -586,6 +587,7 @@ async function fetchGroqReport(
       },
       body: JSON.stringify({
         model: getAIModel(MODEL),
+        max_tokens: 6000,
         temperature: 0.2,
         response_format: {
           type: "json_object",
@@ -601,7 +603,7 @@ async function fetchGroqReport(
           },
         ],
       }),
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, signal]),
       cache: "no-store",
     });
 
@@ -738,7 +740,7 @@ ${JSON.stringify(reportData, null, 2)}
 - Верни только JSON.
     `.trim();
 
-    const groqData = await fetchGroqReport(apiKey, userPrompt);
+    const groqData = await fetchGroqReport(apiKey, userPrompt, request.signal);
     const content = groqData.choices?.[0]?.message?.content;
 
     if (!content || !content.trim()) {
@@ -753,6 +755,12 @@ ${JSON.stringify(reportData, null, 2)}
       sampleSize,
       selectedInterviews.length
     );
+    // Only excerpts found verbatim in submitted interviews may appear as quotes.
+    report.quotes = report.quotes.flatMap(quote => {
+      const source = selectedInterviews.find(interview => interview.answer?.includes(quote.quote));
+      return source ? [{ ...quote, opinion: cleanText(source.opinion, 'позиция не указана'), respondentDescription: `Респондент #${source.respondentId ?? 'без ID'}: ${source.gender}, ${source.age}, ${source.city}` }] : [];
+    });
+    report.distributionAnalysis = `Позиции в смоделированных профилях, а не результаты реального опроса. Выборка: ${sampleSize}. ` + Object.entries(opinionDistribution).map(([key,value]) => `${({fullySupport:'Полностью поддерживает',ratherSupport:'Скорее поддерживает',neutral:'Нейтральная позиция',ratherOppose:'Скорее не поддерживает',fullyOppose:'Совершенно не поддерживает',difficultToAnswer:'Затрудняется ответить',refuseToAnswer:'Отказывается отвечать'} as Record<string,string>)[key]}: ${value}%`).join('; ') + '.';
 
     return NextResponse.json({
       report,

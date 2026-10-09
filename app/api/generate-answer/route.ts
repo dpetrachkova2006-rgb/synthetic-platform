@@ -660,7 +660,7 @@ export async function POST(
               "application/json",
           },
           cache: "no-store",
-          signal: controller.signal,
+          signal: AbortSignal.any([controller.signal, request.signal]),
           body: JSON.stringify({
             model: getAIModel(model),
             temperature:

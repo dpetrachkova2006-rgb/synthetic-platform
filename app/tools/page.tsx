@@ -1,0 +1,2 @@
+import Link from 'next/link';
+export default function Tools() { return <main className="mx-auto w-full max-w-5xl px-5 py-10"><h1 className="text-3xl font-black">Исследовательские инструменты</h1><Link href="/guide-test" className="editorial-card mt-6 block p-6"><h2 className="text-xl font-bold">Тестирование гайда</h2><p className="mt-3 text-gray-600">Проверка вопросов интервью и моделирование прохождения гайда.</p></Link></main>; }

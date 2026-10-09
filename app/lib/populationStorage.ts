@@ -1,3 +1,4 @@
+import { readStudies, saveStudy } from "./study";
 import type {
   SyntheticRespondent,
 } from "./syntheticGenerator";
@@ -66,6 +67,9 @@ export function savePopulation(
       savedValue
     );
 
+    const project = readStudies().find(p => p.type === 'quantitative' && p.researchId === localStorage.getItem('research_id'));
+    if (project) saveStudy({ ...project, population });
+    window.dispatchEvent(new Event('research-saved'));
     localStorage.removeItem(
       temporaryKey
     );

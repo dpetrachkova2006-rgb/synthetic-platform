@@ -73,13 +73,15 @@ export function convertDistributionToWeights(
 
 export async function generateOpinionDistribution(
   topic: string,
-  question: string
+  question: string,
+  signal?: AbortSignal
 ): Promise<OpinionDistributionResult> {
   try {
     const response = await fetch(
       "/api/generate-distribution",
       {
         method: "POST",
+        signal,
         headers: {
           "Content-Type": "application/json",
         },
@@ -109,6 +111,7 @@ export async function generateOpinionDistribution(
 
     return data;
   } catch (error) {
+    if (signal?.aborted) throw error;
     console.error(
       "Не удалось получить распределение мнений:",
       error

@@ -8,9 +8,9 @@ const require = createRequire(import.meta.url);
 const root = process.cwd();
 test('linked studies: persistence, selection, completion, evidence and API validation', async () => {
 const modules=new Map();
-function load(file){file=path.resolve(file);if(modules.has(file))return modules.get(file);const loadedModule={exports:{}};modules.set(file,loadedModule.exports);const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','module','exports',code)(name=>name.startsWith('.')?load(path.resolve(path.dirname(file),name+'.ts')):require(path.resolve(root,'node_modules',name)),loadedModule,loadedModule.exports);return loadedModule.exports;}
+function load(file){file=path.resolve(file);if(file.endsWith('.json'))return JSON.parse(fs.readFileSync(file,'utf8'));if(modules.has(file))return modules.get(file);const loadedModule={exports:{}};modules.set(file,loadedModule.exports);const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;new Function('require','module','exports',code)(name=>name.startsWith('.')?load(path.resolve(path.dirname(file),name.endsWith('.json')?name:name+'.ts')):require(path.resolve(root,'node_modules',name)),loadedModule,loadedModule.exports);return loadedModule.exports;}
 const m=load(root+'/app/lib/study.ts');
-const storage=new Map();global.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)};
+const storage=new Map();global.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
 const s=m.createStudy('mixed','Транспорт','Поддержка транспорта?');
 s.population=[{id:7,name:'Анна',age:25,gender:'женщина',city:'Москва',education:'высшее',income:'средний'},{id:91,name:'Иван',age:60,gender:'мужчина',city:'Тверь',education:'среднее',income:'низкий'}];
 s.questionnaire=[{id:'q1',text:'Поддерживаете?',options:['Да','Нет']}];
@@ -37,16 +37,45 @@ assert.deepEqual(m.readStudies()[0].reportRespondentIds, [7]);
 
 const snapshot=localStorage.getItem(m.STUDY_KEY);localStorage.setItem=()=>{throw Error('quota')};assert.throws(()=>m.saveStudy({...s,topic:'other'}));assert.equal(localStorage.getItem(m.STUDY_KEY),snapshot);localStorage.setItem=(k,v)=>storage.set(k,v);
 
+const navigation = load(root+'/app/lib/projectNavigation.ts');
+const qa=m.createStudy('quantitative','A','Question A');qa.population=s.population;m.saveStudy(qa);
+const qb=m.createStudy('quantitative','B','Question B');qb.population=[s.population[0]];m.saveStudy(qb);
+navigation.activateProject(qa);localStorage.setItem('latest_ai_research_report','{"report":"A report"}');
+navigation.activateProject(qb);assert.equal(localStorage.getItem('research_topic'),'B');assert.equal(localStorage.getItem('latest_ai_research_report'),null);
+const storedA=m.readStudies().find(p=>p.researchId===qa.researchId);
+navigation.activateProject(storedA);assert.equal(localStorage.getItem('latest_ai_research_report'),' {"report":"A report"}'.trim());assert.equal(JSON.parse(localStorage.getItem('synthetic_population')).length,2);
+const statistics=load(root+'/app/lib/statisticalData.ts');
+const researchContext=load(root+'/app/lib/researchContext.ts');
+assert.equal(researchContext.findRelevantResearch('Отношение россиян к транспорту','Удобны ли автобусы в России?').length,0);
+assert.equal(researchContext.findRelevantResearch('Использование ИИ','Как люди используют нейросети?').length,1);
+const cells=statistics.demographicCells();assert.equal(cells.length,24);assert.ok(cells.every(r=>r.weight>0&&r.min>=20&&r.max<=79));
+const female=statistics.demographicCells('женщина',{min:25,max:29});assert.equal(female.length,1);assert.equal(female[0].min,25);assert.equal(female[0].max,29);
+assert.throws(()=>statistics.demographicCells(undefined,{min:80,max:85}));
+assert.equal(statistics.comparableQuestion('Q','Россия 20–79',{question:'Q',population:'Россия 18+'}),false);
+assert.equal(statistics.comparableQuestion(' Q ','Россия 20–79',{question:'Q',population:'Россия 20–79'}),true);
+const draw=statistics.drawDemographic('женщина',{min:25,max:29},()=>0.999);assert.deepEqual(draw,{gender:'женщина',age:29});
+const economy = load(root+'/app/lib/researchEconomy.ts');
+assert.equal(economy.SURVEY_BATCH,20);
+assert.equal(economy.compactProfile({...s.population[0],interests:['unrelated'],values:['unrelated'],answer:'long',topic:s.topic}).interests,undefined);
+assert.throws(() => economy.checkBudget({...s, budget:{maxRequests:1,maxTokens:20000},usage:{requests:1,tokens:0}}, {},1000));
+assert.throws(() => economy.checkBudget({...s, budget:{maxRequests:10,maxTokens:100},usage:{requests:0,tokens:0}}, {},1000));
 const {POST}=load(root+'/app/api/study/route.ts');const request=body=>new Request('http://localhost/api/study',{method:'POST',body:JSON.stringify(body)});
 assert.equal((await POST(new Request('http://localhost',{method:'POST',body:'invalid'}))).status,400);
 const base={researchId:s.researchId,topic:s.topic,question:s.question};assert.equal((await POST(request({...base,action:'survey',respondents:[],questionnaire:s.questionnaire}))).status,400);
 const originalKey = process.env.GROQ_API_KEY;
 process.env.GROQ_API_KEY='test-only';const realFetch=global.fetch;const upstream=data=>global.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify(data)}}]});
-upstream({ report: 'Предварительный отчёт по одному завершённому интервью.' });
+upstream({ report: 'Предварительный отчёт по одному завершённому интервью.', themes: [{ title:'Оговорки',interpretation:'Ответ сопровождается оговорками.',quotes:[{respondentId:7,question:'Почему?',quote:'Есть оговорки.'}]}] });
 assert.equal((await POST(request({ ...base, action: 'report', evidence: draftEvidence }))).status, 200);
+upstream({report:'Анализ',themes:[{title:'Поддельная цитата',interpretation:'Проверка.',quotes:[{respondentId:7,question:'Почему?',quote:'Этого не было в интервью'}]}]});
+assert.equal((await POST(request({...base,action:'report',evidence:draftEvidence}))).status,502);
 const input={...base,action:'survey',respondents:s.population,questionnaire:s.questionnaire};upstream({responses:s.responses});assert.equal((await POST(request(input))).status,200);
 upstream({responses:[s.responses[0],s.responses[0]]});assert.equal((await POST(request(input))).status,502);
 upstream({responses:[s.responses[0],{respondentId:91,answers:{q1:'invalid-option'}}]});assert.equal((await POST(request(input))).status,502);
+upstream({turns:[{question:'Почему?',answer:'Есть оговорки.'},{question:'Что изменить?',answer:'Улучшить доступность.'}]});
+const interviewBatch = {...base,action:'interviewBatch',respondent:s.population[0],questions:['Почему?','Что изменить?'],history:[],survey:[]};
+assert.equal((await POST(request(interviewBatch))).status,200);
+upstream({turns:[{question:'Почему?',answer:'Есть оговорки.'}]});
+assert.equal((await POST(request(interviewBatch))).status,502);
 upstream({answer:''});assert.equal((await POST(request({...base,action:'interview',respondent:s.population[0],interviewQuestion:'Почему?',history:[],survey:[]}))).status,502);
 assert.equal((await POST(request({...base,action:'report',evidence:{interviews:[]}}))).status,400);
 global.fetch=realFetch;
@@ -110,5 +139,36 @@ global.fetch = realFetch;
 for (const [key, value] of Object.entries({ AI_PROVIDER: originalProvider, XAI_API_KEY: originalXAIKey, XAI_MODEL: originalXAIModel })) {
   if (value === undefined) delete process.env[key]; else process.env[key] = value;
 }
+// Legacy quantitative requests retain budgets and do not spend again after the cap.
+const legacyFetch=load(root+'/app/lib/budgetedFetch.ts');
+const budgetProject={...m.readStudies().find(p=>p.researchId===qa.researchId),budget:{maxRequests:1,maxTokens:30000},usage:{requests:0,tokens:0}};
+m.saveStudy(budgetProject);localStorage.setItem('research_id',budgetProject.researchId);
+global.fetch=async()=>Response.json({answer:'Сохранённый ответ.'});
+assert.equal((await legacyFetch.budgetedFetch('/api/generate-answer',{method:'POST',body:JSON.stringify({question:'Q'})})).status,200);
+assert.equal(m.readStudies().find(p=>p.researchId===qa.researchId).usage.requests,1);
+await assert.rejects(()=>legacyFetch.budgetedFetch('/api/generate-answer',{method:'POST',body:'{}'}),/бюджет/);
+global.fetch=realFetch;
+// Statistical generation makes one model call for the whole sample, never one per person.
+const generator=load(root+'/app/lib/syntheticGenerator.ts');
+let distributionCalls=0;
+const distribution={fullySupport:10,ratherSupport:20,neutral:20,ratherOppose:20,fullyOppose:10,difficultToAnswer:15,refuseToAnswer:5};
+global.fetch=async()=>{distributionCalls++;return Response.json({distribution,explanation:'Тестовая гипотеза.',sourceMode:'ai-estimate'});};
+const people=await generator.generateSyntheticRespondents(20,'Транспорт','Удобно ли?',{gender:'женщина',age:'25–29',dataFrame:'wb-rus-2024',requireAI:true});
+assert.equal(distributionCalls,1);assert.equal(new Set(people.map(p=>p.id)).size,20);assert.ok(people.every(p=>p.gender==='женщина'&&p.age>=25&&p.age<=29));
+await assert.rejects(()=>generator.generateSyntheticRespondents(20,'Транспорт','Удобно ли?',{age:'80–85',dataFrame:'wb-rus-2024',requireAI:true}));
+assert.equal(distributionCalls,1);
+const cancelled=new AbortController();cancelled.abort();
+global.fetch=async(_url,options)=>{options.signal.throwIfAborted();};
+await assert.rejects(()=>generator.generateSyntheticRespondents(20,'Транспорт','Удобно ли?',{signal:cancelled.signal,requireAI:true}),{name:'AbortError'});
+// The existing quantitative report also rejects fabricated quotes and ignores AI percentages.
+const oldProvider=process.env.AI_PROVIDER, oldGroq=process.env.GROQ_API_KEY;
+process.env.AI_PROVIDER='groq';process.env.GROQ_API_KEY='test-only';
+global.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({title:'Тест',distributionAnalysis:'Выдуманные 99%',quotes:[{quote:'Есть оговорки.',opinion:'подмена',respondentDescription:'подмена'},{quote:'Выдуманная цитата',opinion:'подмена',respondentDescription:'подмена'}]})}}]});
+const oldReport=load(root+'/app/api/generate-report/route.ts');
+const answer=await oldReport.POST(request({topic:'Транспорт',question:'Удобно ли?',sampleSize:2,opinionDistribution:distribution,interviews:[{respondentId:7,age:25,gender:'женщина',city:'Москва',opinion:'нейтральная позиция',answer:'Есть оговорки.'}]}));
+assert.equal(answer.status,200);const checkedReport=await answer.json();assert.equal(checkedReport.report.quotes.length,1);assert.equal(checkedReport.report.quotes[0].opinion,'нейтральная позиция');assert.match(checkedReport.report.quotes[0].respondentDescription,/#7/);assert.doesNotMatch(checkedReport.report.distributionAnalysis,/99%/);
+if(oldProvider===undefined)delete process.env.AI_PROVIDER;else process.env.AI_PROVIDER=oldProvider;
+if(oldGroq===undefined)delete process.env.GROQ_API_KEY;else process.env.GROQ_API_KEY=oldGroq;
+global.fetch=realFetch;
 global.localStorage = undefined;
 });

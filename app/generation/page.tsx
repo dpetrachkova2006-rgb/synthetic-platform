@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { sourcesForFrame, type DataFrame } from "../lib/statisticalData";
+import BudgetControls from "../components/BudgetControls";
+import { checkBudget } from "../lib/researchEconomy";
 import Link from "next/link";
 
 import { generateRespondentsWithAI } from "../lib/syntheticGenerator";
@@ -57,6 +60,8 @@ function getCurrentStageIndex(progress: number) {
 }
 
 export default function GenerationPage() {
+  const controller = useRef<AbortController | null>(null);
+  const [processedRespondents,setProcessedRespondents] = useState(0);
   const [progress, setProgress] = useState(0);
   const [generated, setGenerated] = useState(false);
   const [started, setStarted] = useState(false);
@@ -65,6 +70,7 @@ export default function GenerationPage() {
 
   const [topic, setTopic] = useState("");
   const [question, setQuestion] = useState("");
+  const [dataFrame,setDataFrame] = useState<DataFrame>("wb-rus-2024");
   const [size, setSize] = useState(DEFAULT_SAMPLE_SIZE);
   const [gender, setGender] = useState("Все");
   const [age, setAge] = useState("Все");
@@ -74,7 +80,7 @@ export default function GenerationPage() {
     setTopic(localStorage.getItem("research_topic") || "");
     setQuestion(localStorage.getItem("research_question") || "");
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(timer); controller.current?.abort(); };
   }, []);
 
   const currentStageIndex = useMemo(() => {
@@ -84,16 +90,6 @@ export default function GenerationPage() {
 
     return getCurrentStageIndex(progress);
   }, [generated, progress]);
-
-  const processedRespondents = useMemo(() => {
-    if (generated) {
-      return size;
-    }
-
-    const calculatedValue = Math.round((size * progress) / 100);
-
-    return Math.min(size, Math.max(0, calculatedValue));
-  }, [generated, progress, size]);
 
   function normalizeSampleSize(value: number) {
     if (!Number.isFinite(value)) {
@@ -129,25 +125,11 @@ export default function GenerationPage() {
     setError("");
     setProgress(4);
 
-    const timer = window.setInterval(() => {
-      setProgress((currentProgress) => {
-        if (currentProgress >= 92) {
-          return 92;
-        }
-
-        if (currentProgress < 30) {
-          return Math.min(92, currentProgress + 4);
-        }
-
-        if (currentProgress < 65) {
-          return Math.min(92, currentProgress + 3);
-        }
-
-        return Math.min(92, currentProgress + 1);
-      });
-    }, 420);
-
+    controller.current=new AbortController();
+    setProcessedRespondents(0);
     try {
+      const active=readStudies().find(p=>p.researchId===localStorage.getItem('research_id'));
+      if(active){checkBudget(active,{topic,question},3000);const usage=active.usage??{requests:0,tokens:0};saveStudy({...active,usage:{requests:usage.requests+1,tokens:usage.tokens+3000,estimated:true}});}
       const population = await generateRespondentsWithAI(
         normalizedSize,
         topic,
@@ -155,7 +137,11 @@ export default function GenerationPage() {
         {
           gender,
           age,
-        }
+          dataFrame,
+          requireAI: true,
+          signal: controller.current.signal,
+        },
+        (done,total)=>{setProcessedRespondents(done);setProgress(18+Math.round(done/total*74));}
       );
 
       localStorage.setItem(
@@ -174,7 +160,8 @@ localStorage.setItem(
 );
 
 const project = readStudies().find(item => item.researchId === localStorage.getItem("research_id"));
-if (project?.type === "quantitative") saveStudy({ ...project, population });
+if (project?.type === "quantitative") saveStudy({ ...project, sources: sourcesForFrame(dataFrame, topic, question), population, legacy: undefined });
+localStorage.removeItem("latest_ai_research_report");
 savePopulation(population);
 
 setProgress(100);
@@ -183,7 +170,7 @@ setGenerated(true);
       console.error(generationError);
 
       setError(
-        generationError instanceof Error
+        generationError instanceof Error && generationError.name === "AbortError" ? "Генерация отменена. Сохранённый проект доступен в меню." : generationError instanceof Error
           ? generationError.message
           : "Не удалось создать респондентов"
       );
@@ -191,7 +178,7 @@ setGenerated(true);
       setStarted(false);
       setProgress(0);
     } finally {
-      window.clearInterval(timer);
+
       setLoading(false);
     }
   }
@@ -246,6 +233,7 @@ setGenerated(true);
         "
       />
 
+      {loading && <button className="app-button-secondary mb-4 px-5 py-3" onClick={()=>controller.current?.abort()}>Отменить генерацию</button>}
       <section
         className="
           site-surface
@@ -522,7 +510,7 @@ setGenerated(true);
                       </div>
                     </div>
 
-                    <div className="grid gap-7 sm:grid-cols-2">
+                    <BudgetControls /><label className="block text-sm font-bold">Основа выборки<select className="app-input mt-3" value={dataFrame} onChange={e=>setDataFrame(e.target.value as DataFrame)}><option value="wb-rus-2024">Россия 20–79 лет: World Bank / ООН, 2024</option><option value="modeled">Модельные характеристики без статистики</option></select><span className="mt-2 block font-normal text-gray-600">Возрастно-половые группы основаны на совместном распределении 2024 года. Статистическая рамка — 20–79 лет, выбранный возраст ограничивается ею. Возраст внутри пятилетней группы моделируется равномерно. Города, доходы и другие характеристики смоделированы.</span></label><div className="grid gap-7 sm:grid-cols-2">
                       <div>
                         <label
                           htmlFor="respondent-age"

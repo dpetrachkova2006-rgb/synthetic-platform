@@ -1,6 +1,8 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import { getPopulation } from "../lib/populationStorage";
+import { generateAIResearchReport } from "../lib/reportGenerator";
 import { useSearchParams } from "next/navigation";
 
 
@@ -28,104 +30,22 @@ useState("");
 
 
 
-function ask(){
-
-
-if(!question) return;
-
-
-
-const answers: Record<string, string> = {
-
-
-"AI-энтузиасты":
-
-`
-Мы проанализировали 3400 синтетических респондентов.
-
-Основные мотивы использования ИИ:
-
-• 78% — экономия времени
-• 67% — помощь в обучении
-• 54% — генерация идей
-
-Главная мысль сегмента:
-
-"ИИ становится личным помощником
-в учебе и работе."
-`,
-
-
-
-"Креативный кластер":
-
-`
-Анализ 2800 синтетических респондентов.
-
-Основные причины:
-
-• 81% — создание нового контента
-• 64% — поиск вдохновения
-• 58% — эксперименты с технологиями
-
-Главная мысль:
-
-"ИИ расширяет творческие возможности."
-`,
-
-
-
-"Практики":
-
-`
-Анализ 2200 синтетических респондентов.
-
-Основные причины:
-
-• 86% — повышение эффективности
-• 71% — автоматизация задач
-• 63% — экономия ресурсов
-
-Главная мысль:
-
-"Технологии должны давать измеримый результат."
-`,
-
-
-
-"Социально активные":
-
-`
-Анализ 1600 синтетических респондентов.
-
-Основные мотивы:
-
-• 85% — коммуникация
-• 78% — участие в сообществах
-• 70% — общественные инициативы
-
-Главная мысль:
-
-"Технологии должны помогать людям объединяться."
-`
-
-
-};
-
-
-setAnswer(
-answers[segment]
-||
-answers["AI-энтузиасты"]
-);
-
-
+const [busy,setBusy] = useState(false);
+async function ask(){
+  if(!question.trim() || busy) return;
+  const people = getPopulation().filter(p => {
+    const explicit=(p as typeof p & {segment?:string}).segment;
+    const derived=/поддерживает/.test(p.opinion) && !/не поддерживает/.test(p.opinion)?'Поддерживает':/не поддерживает/.test(p.opinion)?'Не поддерживает':p.opinion==='затрудняется ответить'?'Не определился':p.opinion==='отказывается отвечать'?'Отказ от ответа':'Нейтральная позиция';
+    return (explicit || derived)===segment;
+  });
+  if(!people.length){setAnswer('В сохранённой выборке нет участников этого сегмента. Выберите существующую группу на карте; готовые проценты и цитаты не подставляются.');return;}
+  if(!people.some(p=>p.answer?.trim())){setAnswer(`В группе ${people.length} профилей. Сначала получите ответы участников на карте: по одним характеристикам нельзя определить их мотивы.`);return;}
+  setBusy(true);setAnswer('');
+  try {
+    const result=await generateAIResearchReport({topic:localStorage.getItem('research_topic')||'Анализ сохранённого сегмента',question:question.trim()},people.map(p=>({...p,answer:p.answer??''})));
+    setAnswer(`Сохранено профилей в группе: ${people.length}. Ответов: ${people.filter(p=>p.answer?.trim()).length}. Данные синтетические.\n\nИнтерпретация модели по сохранённым ответам:\n${result.report.briefConclusions.join('\n')}\n\n${result.report.analyticalOverview || result.report.distributionAnalysis}`);
+  }catch(e){setAnswer(e instanceof Error?e.message:'Сервис анализа недоступен.');}finally{setBusy(false);}
 }
-
-
-
-
-
 
 
 return (
@@ -232,6 +152,7 @@ text-lg
 <button
 
 onClick={ask}
+disabled={busy}
 
 className="
 mt-6
