@@ -9,7 +9,7 @@ export type Study = {
   createdAt: string; stage: number; population: SyntheticRespondent[];
   questionnaire: SurveyQuestion[]; responses: SurveyResponse[];
   selectedIds: number[]; selectionReason: string; guide: string;
-  interviews: Record<string, InterviewTurn[]>; report: string;
+  interviews: Record<string, InterviewTurn[]>; report: string; reportRespondentIds?: number[];
 };
 export const STUDY_KEY = 'synthetic_studies_v1';
 export const TYPE_LABELS = { quantitative: 'Количественное исследование', qualitative: 'Качественное исследование', mixed: 'Смешанное исследование' };
@@ -39,9 +39,12 @@ export function surveyComplete(study: Study): boolean {
   return study.population.length > 0 && study.questionnaire.length > 0 && study.population.every(p => study.questionnaire.every(q => q.options.includes(study.responses.find(r => r.respondentId === p.id)?.answers[q.id] ?? '')));
 }
 export function guideQuestions(guide: string): string[] { return guide.split('\n').map(q => q.trim()).filter(Boolean); }
-export function interviewsComplete(study: Study): boolean {
+export function completedInterviewIds(study: Study): number[] {
   const questions = guideQuestions(study.guide);
-  return study.selectedIds.length > 0 && questions.length > 0 && study.selectedIds.every(id => questions.every(q => study.interviews[id]?.some(t => t.question === q && t.answer.trim())));
+  return questions.length ? study.selectedIds.filter(id => questions.every(q => study.interviews[id]?.some(t => t.question === q && t.answer.trim()))) : [];
+}
+export function interviewsComplete(study: Study): boolean {
+  return study.selectedIds.length > 0 && completedInterviewIds(study).length === study.selectedIds.length;
 }
 export type SelectionFilter = { gender: string; minAge: number; maxAge: number; city: string; questionId: string; answer: string };
 export function filterRespondents(study: Study, filter: SelectionFilter): SyntheticRespondent[] {
@@ -54,7 +57,8 @@ export function contrastIds(study: Study, questionId: string, first: string, sec
 export function distributions(study: Study) {
   return study.questionnaire.map(q => ({ ...q, distribution: q.options.map(option => ({ option, count: study.responses.filter(r => r.answers[q.id] === option).length })) }));
 }
-export function buildReportEvidence(study: Study) {
+export function buildReportEvidence(study: Study, includedIds = study.selectedIds) {
+  if (!includedIds.length || new Set(includedIds).size !== includedIds.length || includedIds.some(id => !completedInterviewIds(study).includes(id))) throw new Error('Для отчёта нужны завершённые интервью выбранных участников.');
   const counts = (field: 'gender' | 'city' | 'education' | 'income') => Object.fromEntries([...new Set(study.population.map(p => p[field]))].map(value => [value, study.population.filter(p => p[field] === value).length]));
-  return { researchId: study.researchId, type: study.type, topic: study.topic, question: study.question, createdAt: study.createdAt, sample: { size: study.population.length, age: study.population.length ? [Math.min(...study.population.map(p => p.age)), Math.max(...study.population.map(p => p.age))] : [], gender: counts('gender'), city: counts('city'), education: counts('education'), income: counts('income') }, quantitative: distributions(study), selectionReason: study.selectionReason, interviews: study.selectedIds.map(id => ({ respondent: study.population.find(p => p.id === id), survey: study.responses.find(r => r.respondentId === id), transcript: study.interviews[id] ?? [] })) };
+  return { researchId: study.researchId, type: study.type, topic: study.topic, question: study.question, createdAt: study.createdAt, sample: { size: study.population.length, age: study.population.length ? [Math.min(...study.population.map(p => p.age)), Math.max(...study.population.map(p => p.age))] : [], gender: counts('gender'), city: counts('city'), education: counts('education'), income: counts('income') }, quantitative: distributions(study), selectionReason: study.selectionReason, interviewCoverage: { selected: study.selectedIds.length, completed: completedInterviewIds(study).length, included: includedIds.length, excludedIds: study.selectedIds.filter(id => !includedIds.includes(id)), preliminary: includedIds.length < study.selectedIds.length }, interviews: includedIds.map(id => ({ respondent: study.population.find(p => p.id === id), survey: study.responses.find(r => r.respondentId === id), transcript: study.interviews[id] ?? [] })) };
 }

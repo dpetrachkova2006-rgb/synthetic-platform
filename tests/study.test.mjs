@@ -21,6 +21,20 @@ assert.deepEqual(m.contrastIds(s,'q1','Да','Нет'),[7,91]);assert.throws(()=
 s.selectedIds=[7,91];s.selectionReason='Контрастные группы по ответу';s.guide='Почему?';s.interviews={7:[{question:'Почему?',answer:'Есть оговорки.'}]};assert.equal(m.interviewsComplete(s),false);s.interviews[91]=[{question:'Почему?',answer:'Хотя я ответил нет, некоторые изменения поддерживаю.'}];assert.equal(m.interviewsComplete(s),true);
 m.saveStudy(s);assert.deepEqual(m.readStudies()[0],s);assert.deepEqual(m.buildReportEvidence(s).interviews.map(i=>i.respondent.id),[7,91]);assert.equal(m.buildReportEvidence(s).quantitative[0].distribution[0].count,1);
 assert.throws(()=>m.saveStudy({...s,selectedIds:[999]}));assert.throws(()=>m.saveStudy({...s,population:[s.population[0],s.population[0]]}));assert.throws(()=>m.saveStudy({...s,interviews:{999:[]}}));
+const partial = { ...s, type: 'qualitative', interviews: { 7: s.interviews[7] } };
+assert.deepEqual(m.completedInterviewIds(partial), [7]);
+assert.equal(m.interviewsComplete(partial), false);
+const draftEvidence = m.buildReportEvidence(partial, [7]);
+assert.deepEqual(draftEvidence.interviews.map(i => i.respondent.id), [7]);
+assert.deepEqual(draftEvidence.interviewCoverage, { selected: 2, completed: 1, included: 1, excludedIds: [91], preliminary: true });
+assert.throws(() => m.buildReportEvidence(partial));
+assert.throws(() => m.buildReportEvidence(partial, [91]));
+assert.throws(() => m.buildReportEvidence(partial, [7, 7]));
+assert.deepEqual(m.completedInterviewIds({ ...partial, interviews: { 7: [{ question: 'Почему?', answer: ' ' }] } }), []);
+assert.equal(m.buildReportEvidence(s).interviewCoverage.preliminary, false);
+m.saveStudy({ ...partial, report: 'Предварительный отчёт', reportRespondentIds: [7], stage: 3 });
+assert.deepEqual(m.readStudies()[0].reportRespondentIds, [7]);
+
 const snapshot=localStorage.getItem(m.STUDY_KEY);localStorage.setItem=()=>{throw Error('quota')};assert.throws(()=>m.saveStudy({...s,topic:'other'}));assert.equal(localStorage.getItem(m.STUDY_KEY),snapshot);localStorage.setItem=(k,v)=>storage.set(k,v);
 
 const {POST}=load(root+'/app/api/study/route.ts');const request=body=>new Request('http://localhost/api/study',{method:'POST',body:JSON.stringify(body)});
@@ -28,6 +42,8 @@ assert.equal((await POST(new Request('http://localhost',{method:'POST',body:'inv
 const base={researchId:s.researchId,topic:s.topic,question:s.question};assert.equal((await POST(request({...base,action:'survey',respondents:[],questionnaire:s.questionnaire}))).status,400);
 const originalKey = process.env.GROQ_API_KEY;
 process.env.GROQ_API_KEY='test-only';const realFetch=global.fetch;const upstream=data=>global.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify(data)}}]});
+upstream({ report: 'Предварительный отчёт по одному завершённому интервью.' });
+assert.equal((await POST(request({ ...base, action: 'report', evidence: draftEvidence }))).status, 200);
 const input={...base,action:'survey',respondents:s.population,questionnaire:s.questionnaire};upstream({responses:s.responses});assert.equal((await POST(request(input))).status,200);
 upstream({responses:[s.responses[0],s.responses[0]]});assert.equal((await POST(request(input))).status,502);
 upstream({responses:[s.responses[0],{respondentId:91,answers:{q1:'invalid-option'}}]});assert.equal((await POST(request(input))).status,502);

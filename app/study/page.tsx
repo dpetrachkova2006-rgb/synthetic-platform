@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { generateRespondentsWithAI } from '../lib/syntheticGenerator';
-import { buildReportEvidence, contrastIds, createStudy, distributions, filterRespondents, guideQuestions, interviewsComplete, readStudies, saveStudy, surveyComplete, TYPE_LABELS, type ResearchType, type SelectionFilter, type Study, type SurveyResponse } from '../lib/study';
+import { buildReportEvidence, completedInterviewIds, contrastIds, createStudy, distributions, filterRespondents, guideQuestions, interviewsComplete, readStudies, saveStudy, surveyComplete, TYPE_LABELS, type ResearchType, type SelectionFilter, type Study, type SurveyResponse } from '../lib/study';
 
 const STEPS = ['Количественный этап', 'Отбор респондентов', 'Глубинные интервью', 'Общий отчёт'];
 const initialFilter: SelectionFilter = { gender: '', minAge: 18, maxAge: 85, city: '', questionId: '', answer: '' };
@@ -40,6 +40,15 @@ export default function StudyPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  const stage = study?.stage;
+  const researchId = study?.researchId;
+  useEffect(() => {
+    if (stage === undefined) return;
+    const panel = document.getElementById('study-stage');
+    panel?.scrollIntoView({ block: 'start' });
+    panel?.focus({ preventScroll: true });
+  }, [stage, researchId]);
 
   function commit(next: Study) {
     saveStudy(next);
@@ -108,12 +117,13 @@ export default function StudyPage() {
       }
     });
   }
-  async function report() {
+  async function report(preliminary = false) {
     if (!study) return;
     await run('Создаём общий отчёт…', async () => {
-      if (!interviewsComplete(study) || (study.type === 'mixed' && !surveyComplete(study))) throw new Error('Сначала завершите опрос и все выбранные интервью.');
-      const data = await api(study, { action: 'report', evidence: buildReportEvidence(study) });
-      commit({ ...study, report: data.report });
+      if (preliminary ? study.type !== 'qualitative' || !completedInterviewIds(study).length : !interviewsComplete(study) || (study.type === 'mixed' && !surveyComplete(study))) throw new Error('Сначала завершите необходимые интервью и опрос.');
+      const includedIds = preliminary ? completedInterviewIds(study) : study.selectedIds;
+      const data = await api(study, { action: 'report', evidence: buildReportEvidence(study, includedIds) });
+      commit({ ...study, report: data.report, reportRespondentIds: includedIds });
     });
   }
   function download() {
@@ -128,6 +138,8 @@ export default function StudyPage() {
   const guide = guideQuestions(study?.guide ?? '');
   const validQuestionnaire = !!study?.questionnaire.length && study.questionnaire.every(q => q.text.trim() && q.options.length >= 2 && q.options.length <= 12 && q.options.every(o => o.trim().length > 0 && o.length <= 200) && new Set(q.options).size === q.options.length);
   const validGuide = guide.length > 0 && guide.length <= 30 && new Set(guide).size === guide.length && guide.every(q => q.length <= 2000);
+  const completedIds = study ? completedInterviewIds(study) : [];
+  const remainingIds = study?.selectedIds.filter(id => !completedIds.includes(id)) ?? [];
   const field = 'app-input mt-2';
   const button = 'app-button min-h-12 px-5';
   if (!ready) return <main className="p-10">Загрузка проектов…</main>;
@@ -151,10 +163,10 @@ export default function StudyPage() {
           <p className="eyebrow">{TYPE_LABELS[study.type]}</p><h1 className="mt-3 text-3xl font-black">{study.topic}</h1><p className="mt-3 text-gray-700">{study.question}</p>
           <p className="mt-2 break-all text-xs text-gray-500">Проект {study.researchId} · данные сохраняются в этом браузере</p>
           <nav aria-label="Этапы исследования" className="my-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{STEPS.map((step, index) => {
-            const disabled = !!busy || (index === 1 && !study.population.length) || (index >= 1 && study.type !== 'qualitative' && !surveyComplete(study)) || (index >= 2 && (!study.selectedIds.length || !study.selectionReason.trim())) || (index === 3 && !interviewsComplete(study));
+            const disabled = !!busy || (index === 1 && !study.population.length) || (index >= 1 && study.type !== 'qualitative' && !surveyComplete(study)) || (index >= 2 && (!study.selectedIds.length || !study.selectionReason.trim()));
             return <button key={step} disabled={disabled} aria-current={study.stage === index ? 'step' : undefined} onClick={() => update({ stage: index })} className={`rounded-xl border p-4 text-left text-sm font-bold ${study.stage === index ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-200'} disabled:opacity-40`}>{index + 1}. {index === 0 && study.type === 'qualitative' ? 'Группа респондентов' : step}</button>;
           })}</nav>
-          <fieldset disabled={!!busy} className="min-w-0 disabled:opacity-70">
+          <fieldset id="study-stage" tabIndex={-1} disabled={!!busy} className="min-w-0 disabled:opacity-70">
           {study.stage === 0 && <div className="space-y-8">
             <h2 className="text-2xl font-black">{study.type === 'qualitative' ? 'Создание группы' : 'Выборка и анкета'}</h2>
             {!study.population.length ? <><div className="grid gap-5 sm:grid-cols-3">
@@ -212,14 +224,21 @@ export default function StudyPage() {
             {respondent && <div className="editorial-card space-y-4 p-6"><h3 className="text-xl font-black">#{respondent.id} {respondent.name}</h3><p>{respondent.gender}, {respondent.age} лет, {respondent.city}, {respondent.region}</p><p>{respondent.education} · {respondent.employment} · {respondent.income} · {respondent.familyStatus}</p><p>Интересы: {respondent.interests.join(', ')}. Ценности: {respondent.values.join(', ')}</p>
               <Comparison study={study} id={respondent.id} />
             </div>}
-            <div className="flex flex-wrap gap-3"><button className={button} disabled={activeId === null || !validGuide} onClick={() => interview(false)}>Провести / продолжить интервью</button><button className="app-button-secondary min-h-12 px-5" disabled={activeId === null || !validGuide} onClick={() => interview(true)}>Интервью со всеми выбранными</button><button className={button} disabled={!interviewsComplete(study)} onClick={() => update({ stage: 3 })}>Перейти к общему отчёту →</button></div>
+            <p role="status">Завершено интервью: {completedIds.length} из {study.selectedIds.length}. {remainingIds.length > 0 && `Осталось: ${remainingIds.length}. В разделе отчёта можно посмотреть готовность исследования.`}</p>
+            <div className="flex flex-wrap gap-3"><button className={button} disabled={activeId === null || !validGuide} onClick={() => interview(false)}>Провести / продолжить интервью</button><button className="app-button-secondary min-h-12 px-5" disabled={activeId === null || !validGuide} onClick={() => interview(true)}>Интервью со всеми выбранными</button><button className={button} onClick={() => update({ stage: 3 })}>Перейти к общему отчёту →</button></div>
           </div>}
           {study.stage === 3 && <div className="space-y-6">
             <h2 className="text-2xl font-black">Единый аналитический отчёт</h2>
             {study.type === 'mixed' && <Quantitative study={study} />}
             <p>Исходная выборка: {study.population.length}. Участников интервью: {study.selectedIds.length}.</p><p className="whitespace-pre-wrap">Принципы отбора: {study.selectionReason}</p>
-            <button className={button} onClick={report}>{study.report ? 'Обновить аналитический отчёт' : 'Сформировать аналитический отчёт'}</button>
-            {study.report && <article className="editorial-card whitespace-pre-wrap p-6 leading-7">{study.report}</article>}
+            {remainingIds.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p>Завершено интервью: {completedIds.length} из {study.selectedIds.length}. Для итогового отчёта завершите интервью с остальными участниками.</p>
+              <p className="mt-2">Ожидают завершения: {remainingIds.map(id => `#${id}`).join(', ')}.</p>
+              <button className="app-button-secondary mt-3 min-h-12 px-5" onClick={() => { setActiveId(remainingIds[0]); update({ stage: 2 }); }}>Продолжить оставшиеся интервью</button>
+              {study.type === 'qualitative' && completedIds.length > 0 && <><p className="mt-3">Предварительный отчёт включает только {completedIds.length} завершённых интервью. Остальные участники не включаются в анализ.</p><button className={`${button} mt-3`} onClick={() => report(true)}>Сформировать предварительный отчёт по {completedIds.length} интервью</button></>}
+            </div>}
+            <button className={button} disabled={!interviewsComplete(study)} onClick={() => report()}>{study.report ? 'Обновить аналитический отчёт' : 'Сформировать аналитический отчёт'}</button>
+            {study.report && <article className="editorial-card whitespace-pre-wrap p-6 leading-7">{study.reportRespondentIds && study.reportRespondentIds.length < study.selectedIds.length && <p className="mb-4 font-bold text-amber-800">Предварительный отчёт: {study.reportRespondentIds.length} из {study.selectedIds.length} выбранных участников.</p>}{study.report}</article>}
             <h3 className="text-xl font-black">Анкета и интервью каждого участника</h3>{study.selectedIds.map(id => <details className="editorial-card p-5" key={id}><summary className="cursor-pointer font-bold">#{id} {study.population.find(p => p.id === id)?.name}</summary><div className="mt-4"><Comparison study={study} id={id} /></div></details>)}
             <p className="text-sm text-gray-500">Все ответы синтетические. Эти результаты не заменяют эмпирическое исследование и не позволяют оценить реальное общественное мнение.</p>
           </div>}
