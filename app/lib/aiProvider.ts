@@ -25,7 +25,7 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise
   if (!Number.isFinite(limit) || limit < 2000) throw new Error('Некорректный серверный AI_MAX_REQUEST_TOKENS.');
   const estimatedInput = Math.ceil(JSON.stringify(payload.messages ?? []).length / 2);
   const outputLimit = Number(payload.max_completion_tokens ?? payload.max_tokens ?? 4500);
-  if (estimatedInput + outputLimit > limit) throw new Error('Запрос превышает серверный бюджет токенов. Уменьшите контекст, гайд или число интервью.');
+  if (estimatedInput + outputLimit > limit) throw new Error('Слишком большой объём данных для одного запроса. Сократите вопросы или историю интервью.');
   if (config.provider !== 'groq') {
     payload.model = config.model;
     if (payload.max_completion_tokens !== undefined) {

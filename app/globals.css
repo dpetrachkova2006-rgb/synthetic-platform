@@ -407,3 +407,26 @@ a:focus-visible {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* A compact start screen and a clear interview action, using the existing palette. */
+.home-hero { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(0,1fr); align-items: center; gap: 40px; padding: 44px; border: 1px solid #e0e4ed; border-radius: 28px; background: linear-gradient(125deg,#fff 45%,#f1f4ff); }
+.home-hero__copy { min-width: 0; }
+.home-hero h1 { margin-top: 24px; font-size: clamp(38px,4.4vw,58px); line-height: 1.1; font-weight: 800; letter-spacing: -.055em; }
+.home-hero h1 span { color: #3154ff; }
+.home-process { min-width: 0; border: 1px solid #dce3fb; border-radius: 22px; padding: 24px; background: #eaf0ff; }
+.home-process__steps { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 26px 0; }
+.home-process__steps div { display: flex; align-items: center; gap: 7px; color: #365283; font-size: 11px; font-weight: 650; }
+.home-process__steps i { height: 1px; flex: 1; background: #c4d2f0; }
+.home-process__paper { padding: 24px; border: 1px solid #e0e6f2; border-radius: 16px; background: #fff; box-shadow: 0 8px 24px #26448509; font-size: 14px; }
+.home-process__bar { height: 10px; border-radius: 6px; background: #3154ff; }
+.method-card { display: flex; flex-direction: column; min-width: 0; padding: 26px; border: 1px solid #dde2ec; border-radius: 20px; background: #fff; transition: border-color .2s, transform .2s, box-shadow .2s; }
+.method-card:hover { border-color: #3154ff; transform: translateY(-3px); box-shadow: 0 10px 24px #26448508; }
+.method-card__icon { display: inline-flex; padding: 12px; border-radius: 14px; background: #eef2ff; color: #3154ff; }
+.home-resume { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border: 1px solid #dde2ec; border-radius: 18px; background: #ffffffb3; }
+.home-resume:hover { border-color: #3154ff; }
+.interview-panel { min-width: 0; border: 1px solid #e0e5ef; border-radius: 20px; background: #fff; padding: 24px; }
+.interview-panel--action { border-color: #d7e0ff; background: #f6f8ff; scroll-margin-top: 24px; }
+.interview-step { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; color: #3154ff; background: #e9eeff; font-size: 13px; }
+@media (max-width: 1023px) { .home-hero { gap: 26px; padding: 30px; } .home-process { padding: 18px; } .home-process__paper { padding: 18px; } }
+@media (max-width: 767px) { .home-hero { grid-template-columns: minmax(0,1fr); padding: 24px; border-radius: 22px; } .home-process { margin-top: 8px; } .home-hero h1 { font-size: 30px; } .home-process__steps div { font-size: 10px; gap: 5px; } .method-card { padding: 22px; } .interview-panel { padding: 18px; } }
+@media (prefers-reduced-motion: reduce) { .method-card { transition: none; } .method-card:hover { transform: none; } }

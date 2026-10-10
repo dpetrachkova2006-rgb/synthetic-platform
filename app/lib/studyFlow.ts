@@ -5,13 +5,19 @@ export function questionnaireValid(s:Study) {
   return s.questionnaire.length>0&&s.questionnaire.length<=10&&s.questionnaire.every(q=>q.text.trim()&&q.options.length>=2&&q.options.length<=12&&q.options.every(o=>o.trim()&&o.length<=200)&&new Set(q.options).size===q.options.length);
 }
 export function guideValid(s:Study) {const q=guideQuestions(s.guide);return q.length>0&&q.length<=30&&new Set(q).size===q.length&&q.every(text=>text.length<=2000);}
+/** Launching the whole group does not depend on the participant being viewed. */
+export function interviewTargets(s:Study,all:boolean,activeId:number|null):number[] {
+  if(all)return [...s.selectedIds];
+  const id=activeId!==null&&s.selectedIds.includes(activeId)?activeId:s.selectedIds[0];
+  return id===undefined?[]:[id];
+}
 export function stageChecks(s:Study,stage:number):FlowCheck[] {
   const population={label:'Сформировать выборку',done:s.population.length>0,help:'Укажите размер группы и нажмите «Сформировать выборку».',target:'sample-settings',stage:0};
   const selection={label:'Выбрать участников интервью',done:s.selectedIds.length>0,help:'Отметьте участников в таблице или добавьте найденных по фильтрам.',target:'respondent-selection',stage:1};
   const reason={label:'Объяснить принцип отбора',done:!!s.selectionReason.trim(),help:'Напишите, почему выбрали этих участников. Например: разные ответы и возраст.',target:'selection-reason',stage:1};
   const guide={label:'Добавить вопросы интервью',done:guideValid(s),help:'Введите от 1 до 30 разных вопросов, по одному на строку.',target:'interview-guide',stage:2};
   const finished=completedInterviewIds(s).length;
-  const interviews={label:`Завершить интервью: ${finished} из ${s.selectedIds.length}`,done:interviewsComplete(s),help:guideValid(s)?'Нажмите «Интервью со всеми выбранными». Уже готовые ответы не повторяются.':'Сначала добавьте вопросы интервью, затем запустите интервью.',target:'interview-actions',stage:2};
+  const interviews={label:`Завершить интервью: ${finished} из ${s.selectedIds.length}`,done:interviewsComplete(s),help:guideValid(s)?'Нажмите «Начать интервью» или «Продолжить интервью».':'Добавьте вопросы, затем нажмите «Начать интервью».',target:'interview-actions',stage:2};
   if(stage===0)return s.type==='qualitative'?[population]:[population,{label:'Подготовить анкету',done:questionnaireValid(s),help:'Добавьте вопрос и минимум два разных непустых варианта ответа.',target:'questionnaire-editor',stage:0},{label:`Получить ответы: ${s.responses.length} из ${s.population.length}`,done:surveyComplete(s),help:'После создания выборки и анкеты нажмите «Запустить моделирование ответов».',target:'survey-actions',stage:0}];
   if(stage===1)return [selection,reason];
   if(stage===2)return [guide,interviews];

@@ -1,6 +1,8 @@
-import { Check, ArrowRight, Circle } from 'lucide-react';
+import { Check, ArrowRight } from 'lucide-react';
 import type { FlowCheck } from '../lib/studyFlow';
-export default function StageChecklist({checks,onResolve,title='Что нужно сделать на этом этапе'}:{checks:FlowCheck[];onResolve:(check:FlowCheck)=>void;title?:string}) {
+export default function StageChecklist({checks,onResolve,title='Следующий шаг'}:{checks:FlowCheck[];onResolve:(check:FlowCheck)=>void;title?:string}) {
   const next=checks.find(check=>!check.done);
-  return <aside className={`flow-checklist ${next?'':'flow-checklist--ready'}`} aria-label={title}><div className="flex items-center justify-between gap-4"><h3 className="font-bold">{next?title:'Можно переходить дальше'}</h3><span className="shrink-0 text-xs font-bold">{checks.filter(c=>c.done).length} / {checks.length}</span></div><ol className="mt-4 grid gap-3 sm:grid-cols-2">{checks.map(check=><li key={check.target} className={`flex gap-3 text-sm ${check.done?'text-gray-600':'text-gray-900'}`}><span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${check.done?'bg-blue-600 text-white':'border border-gray-300'}`}>{check.done?<Check size={13}/>:<Circle size={10}/>}</span><div><p className={check.done?'':'font-semibold'}>{check.label}</p>{!check.done&&<p className="mt-1 leading-5 text-gray-500">{check.help}</p>}</div></li>)}</ol>{next&&<button type="button" className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-blue-700" onClick={()=>onResolve(next)}>Перейти к следующему действию <ArrowRight size={16}/></button>}</aside>;
+  return <aside className={`flow-checklist ${next?'':'flow-checklist--ready'}`} aria-label={title}>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">{next?next.label:'Всё готово — можно переходить дальше'}</p>{next&&<p className="mt-1 text-sm leading-6 text-gray-600">{next.help}</p>}</div>{next?<button type="button" className="inline-flex shrink-0 items-center gap-2 text-sm font-bold text-blue-700" onClick={()=>onResolve(next)}>К действию <ArrowRight size={16}/></button>:<Check size={20} className="text-emerald-700"/>}</div>
+  </aside>;
 }

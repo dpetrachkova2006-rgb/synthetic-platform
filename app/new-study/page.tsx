@@ -1,2 +1,4 @@
-import Link from 'next/link';
-export default function NewStudy() { return <main className="mx-auto w-full max-w-5xl px-5 py-10"><h1 className="text-3xl font-black">Новое исследование</h1><p className="my-4 text-gray-600">Выберите метод исследования. Каждый проект сохраняется отдельно.</p><div className="grid gap-5 md:grid-cols-3">{[['/research','Количественное','Выборка, карта, распределения и анализ.'],['/study?type=qualitative','Качественное','Группа участников, гайд и глубинные интервью.'],['/study?type=mixed','Смешанное','Опрос, отбор контрастных групп, интервью и общий отчёт.']].map(([href,title,text]) => <Link className="editorial-card p-6 hover:border-blue-600" key={href} href={href}><h2 className="text-xl font-bold">{title}</h2><p className="mt-3 text-gray-600">{text}</p></Link>)}</div></main>; }
+import StudyMethodCards from '../components/StudyMethodCards';
+export default function NewStudy() {
+  return <main className="mx-auto w-full min-w-0 max-w-[1200px] px-5 py-10 sm:px-10"><p className="eyebrow">Новое исследование</p><h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Что хотите узнать?</h1><p className="mb-8 mt-4 text-gray-600">Выберите метод под свой вопрос. Проект сохранится автоматически.</p><StudyMethodCards/></main>;
+}

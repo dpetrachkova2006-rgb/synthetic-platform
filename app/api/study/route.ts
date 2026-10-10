@@ -1,7 +1,7 @@
 import { aiFetch, getAIKey, getAIModel, getAIConfig } from "../../lib/aiProvider";
 import { compactProfile, estimateTokens, SURVEY_BATCH } from '../../lib/researchEconomy';
 import { NextResponse } from 'next/server';
-import { assertRussianAnswer, RUSSIAN_ANSWER_INSTRUCTION } from '../../lib/respondentLanguage';
+import { assertRussianAnswer, russianAnswerPattern, RUSSIAN_ANSWER_INSTRUCTION } from '../../lib/respondentLanguage';
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const text = (value: unknown, max = 4000): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
@@ -28,12 +28,17 @@ export async function POST(request: Request) {
     } else return NextResponse.json({ error: 'Неизвестное действие.' }, { status: 400 });
     if (Array.isArray(body.respondents)) body.respondents = body.respondents.map(p => compactProfile(p as Parameters<typeof compactProfile>[0]));
     if (record(body.respondent)) body.respondent = compactProfile(body.respondent as Parameters<typeof compactProfile>[0], 'interview');
-    const outputLimit = body.action === 'report' ? 6500 : body.action === 'interviewBatch' ? Math.min(6000, (body.questions as unknown[]).length * 700) : body.action === 'survey' ? Math.max(1200, Math.min(6000, 500 + (body.respondents as unknown[]).length * (body.questionnaire as {id:string;options:string[]}[]).reduce((n,q)=>n+estimateTokens(q.id)+Math.max(...q.options.map(estimateTokens))+25,20))) : 1200;
-    if (estimateTokens(body) + outputLimit > Number(process.env.AI_MAX_REQUEST_TOKENS || 60000)) return NextResponse.json({ error: 'Контекст превышает серверный лимит токенов. Уменьшите объём данных.' }, { status: 413 });
+    // Include room for Russian answers, exact question text, JSON and model reasoning.
+    const outputLimit = body.action === 'report' ? 6500 : body.action === 'interviewBatch' ? Math.max(6000, Math.min(14000, 1500 * (body.questions as unknown[]).length + estimateTokens(body.questions) + 700)) : body.action === 'survey' ? Math.max(1200, Math.min(6000, 500 + (body.respondents as unknown[]).length * (body.questionnaire as {id:string;options:string[]}[]).reduce((n,q)=>n+estimateTokens(q.id)+Math.max(...q.options.map(estimateTokens))+25,20))) : 2000;
+    if (estimateTokens(body) + outputLimit > Number(process.env.AI_MAX_REQUEST_TOKENS || 60000)) return NextResponse.json({ error: 'Слишком большой объём данных для одного запроса. Сократите вопросы или историю интервью.' }, { status: 413 });
     let responseFormat: Record<string, unknown> = { type: 'json_object' };
     if (body.action === 'survey' && getAIConfig().provider === 'openrouter' && getAIConfig().model.startsWith('nvidia/nemotron-3-super')) {
       const questions = body.questionnaire as { id: string; options: string[] }[];
       responseFormat = { type: 'json_schema', json_schema: { name: 'survey_responses', strict: true, schema: { type: 'object', properties: { responses: { type: 'array', items: { type: 'object', properties: { respondentId: { type: 'integer', enum: (body.respondents as {id:number}[]).map(p=>p.id) }, answers: { type: 'object', properties: Object.fromEntries(questions.map(q=>[q.id,{type:'string',enum:q.options}])), required: questions.map(q=>q.id), additionalProperties: false } }, required: ['respondentId','answers'], additionalProperties: false } } }, required: ['responses'], additionalProperties: false } } };
+    }
+    if (body.action === 'interviewBatch' && getAIConfig().provider === 'openrouter' && getAIConfig().model.startsWith('nvidia/nemotron-3-super')) {
+      const questions = body.questions as string[];
+      responseFormat = { type: 'json_schema', json_schema: { name: 'interview_turns', strict: true, schema: { type: 'object', properties: { turns: { type: 'array', minItems: questions.length, maxItems: questions.length, items: { type: 'object', properties: { question: { type: 'string', enum: questions }, answer: { type: 'string', description: 'Ответ участника только на русском языке. Английские слова и выражения переведи естественными русскими словами.', pattern: russianAnswerPattern(`${body.topic} ${body.question} ${questions.join(' ')}`) } }, required: ['question','answer'], additionalProperties: false } } }, required: ['turns'], additionalProperties: false } } };
     }
     const apiKey = getAIKey();
     if (!apiKey) return NextResponse.json({ error: 'На сервере не настроен API-ключ.' }, { status: 503 });
@@ -41,11 +46,14 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const failure = await response.json().catch(() => null);
       const safeError = failure?.error?.message;
-      return NextResponse.json({ error: typeof safeError === 'string' && safeError.startsWith('OpenRouter') ? safeError : response.status === 429 ? 'Достигнут лимит сервиса генерации. Сохранённые ответы доступны; повторите позже.' : 'Сервис генерации недоступен. Повторите попытку.' }, { status: response.status === 429 ? 429 : 502 });
+      return NextResponse.json({ error: typeof safeError === 'string' && safeError.includes('OpenRouter') ? safeError : response.status === 429 ? 'Достигнут лимит сервиса генерации. Сохранённые ответы доступны; повторите позже.' : 'Сервис генерации недоступен. Повторите попытку.' }, { status: response.status === 429 ? 429 : 502 });
     }
     const completion = await response.json();
     let result: unknown;
-    try { result = JSON.parse(completion.choices?.[0]?.message?.content ?? ''); } catch { throw new Error('Модель вернула некорректный JSON. Повторите попытку.'); }
+    try { result = JSON.parse(completion.choices?.[0]?.message?.content ?? ''); } catch {
+      if (completion.choices?.[0]?.finish_reason === 'length') throw new Error(body.action==='interviewBatch'?'Ответ прервался до завершения. Нажмите «Продолжить интервью» — готовые ответы сохранятся.':'Ответ прервался до завершения. Повторите попытку — готовые результаты сохранены.');
+      throw new Error('Не удалось получить полный ответ. Повторите попытку — готовые ответы сохранены.');
+    }
     if (!record(result)) throw new Error('Неверный формат ответа модели.');
     if (body.action === 'survey') {
       const respondents = body.respondents as Array<{ id: number }>;

@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import ModelingBasis from "../components/ModelingBasis";
-import BudgetControls from "../components/BudgetControls";
 import { budgetedFetch } from "../lib/budgetedFetch";
 import Link from "next/link";
 
@@ -1400,7 +1399,7 @@ async function generateInterviewForRespondent(
               </section>
             )}
 
-            <BudgetControls /><ModelingBasis />
+            <ModelingBasis />
             {reportError && (
               <section className="mt-8 rounded-[18px] border border-red-200 bg-red-50 p-6 text-red-700">
                 <p className="font-black">

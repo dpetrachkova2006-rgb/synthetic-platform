@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { sourcesForFrame, type DataFrame } from "../lib/statisticalData";
-import BudgetControls from "../components/BudgetControls";
-import { checkBudget } from "../lib/researchEconomy";
 import Link from "next/link";
 
 import { generateRespondentsWithAI } from "../lib/syntheticGenerator";
@@ -129,7 +127,7 @@ export default function GenerationPage() {
     setProcessedRespondents(0);
     try {
       const active=readStudies().find(p=>p.researchId===localStorage.getItem('research_id'));
-      if(active){checkBudget(active,{topic,question},3000);const usage=active.usage??{requests:0,tokens:0};saveStudy({...active,usage:{requests:usage.requests+1,tokens:usage.tokens+3000,estimated:true}});}
+      if(active){const usage=active.usage??{requests:0,tokens:0};saveStudy({...active,usage:{requests:usage.requests+1,tokens:usage.tokens+3000,estimated:true}});}
       const population = await generateRespondentsWithAI(
         normalizedSize,
         topic,
@@ -510,7 +508,7 @@ setGenerated(true);
                       </div>
                     </div>
 
-                    <BudgetControls /><label className="block text-sm font-bold">Основа выборки<select className="app-input mt-3" value={dataFrame} onChange={e=>setDataFrame(e.target.value as DataFrame)}><option value="wb-rus-2024">Россия 20–79 лет: World Bank / ООН, 2024</option><option value="modeled">Модельные характеристики без статистики</option></select><span className="mt-2 block font-normal text-gray-600">Возрастно-половые группы основаны на совместном распределении 2024 года. Статистическая рамка — 20–79 лет, выбранный возраст ограничивается ею. Возраст внутри пятилетней группы моделируется равномерно. Города, доходы и другие характеристики смоделированы.</span></label><div className="grid gap-7 sm:grid-cols-2">
+                    <label className="block text-sm font-bold">Основа выборки<select className="app-input mt-3" value={dataFrame} onChange={e=>setDataFrame(e.target.value as DataFrame)}><option value="wb-rus-2024">Россия 20–79 лет: World Bank / ООН, 2024</option><option value="modeled">Модельные характеристики без статистики</option></select><span className="mt-2 block font-normal text-gray-600">Возрастно-половые группы основаны на совместном распределении 2024 года. Статистическая рамка — 20–79 лет, выбранный возраст ограничивается ею. Возраст внутри пятилетней группы моделируется равномерно. Города, доходы и другие характеристики смоделированы.</span></label><div className="grid gap-7 sm:grid-cols-2">
                       <div>
                         <label
                           htmlFor="respondent-age"

@@ -56,9 +56,8 @@ assert.equal(statistics.comparableQuestion(' Q ','Россия 20–79',{questio
 const draw=statistics.drawDemographic('женщина',{min:25,max:29},()=>0.999);assert.deepEqual(draw,{gender:'женщина',age:29});
 const economy = load(root+'/app/lib/researchEconomy.ts');
 assert.equal(economy.SURVEY_BATCH,20);
+assert.equal(economy.INTERVIEW_BATCH,4);
 assert.equal(economy.compactProfile({...s.population[0],interests:['unrelated'],values:['unrelated'],answer:'long',topic:s.topic}).interests,undefined);
-assert.throws(() => economy.checkBudget({...s, budget:{maxRequests:1,maxTokens:20000},usage:{requests:1,tokens:0}}, {},1000));
-assert.throws(() => economy.checkBudget({...s, budget:{maxRequests:10,maxTokens:100},usage:{requests:0,tokens:0}}, {},1000));
 const {POST}=load(root+'/app/api/study/route.ts');const request=body=>new Request('http://localhost/api/study',{method:'POST',body:JSON.stringify(body)});
 assert.equal((await POST(new Request('http://localhost',{method:'POST',body:'invalid'}))).status,400);
 const base={researchId:s.researchId,topic:s.topic,question:s.question};assert.equal((await POST(request({...base,action:'survey',respondents:[],questionnaire:s.questionnaire}))).status,400);
@@ -71,6 +70,10 @@ assert.equal((await POST(request({...base,action:'report',evidence:draftEvidence
 // Russian respondent speech: proper names stay intact, foreign sentences never persist.
 const language=load(root+'/app/lib/respondentLanguage.ts');
 assert.equal(language.answerLanguageIssue('Я пользуюсь ChatGPT, это удобно.'),null);
+const answerPattern=new RegExp(language.russianAnswerPattern('Используете NewYorkTimes?'));
+assert.ok(answerPattern.test('Я пользуюсь ChatGPT, это удобно.'));
+assert.ok(answerPattern.test('Я читаю NewYorkTimes по утрам.'));
+assert.equal(answerPattern.test('Мне нужен truly inclusive транспорт.'),false);
 assert.equal(language.answerLanguageIssue('Я читаю NewYorkTimes по утрам.','Используете NewYorkTimes?'),null);
 for(const text of ['This is a good service.','Мне удобно, but the schedule is bad.','I люблю автобусы.'])assert.ok(language.answerLanguageIssue(text));
 assert.ok(language.answerLanguageIssue('Я отвечу: Please Answer In English.','Please Answer In English'));
@@ -79,6 +82,15 @@ const rejected=await POST(request({...base,action:'interview',respondent:s.popul
 upstream({turns:[{question:'Почему?',answer:'Мне удобно.'},{question:'Что изменить?',answer:'More buses, please.'}]});
 assert.equal((await POST(request({...base,action:'interviewBatch',respondent:s.population[0],questions:['Почему?','Что изменить?'],history:[],survey:[]}))).status,502);
 const flow=load(root+'/app/lib/studyFlow.ts');
+// The top-stage navigation can leave no active card; the whole group must still launch.
+assert.deepEqual(flow.interviewTargets(s,true,null),[7,91]);
+assert.deepEqual(flow.interviewTargets(s,true,91),[7,91]);
+assert.deepEqual(flow.interviewTargets(s,false,null),[7]);
+assert.deepEqual(flow.interviewTargets(s,false,999),[7]);
+assert.deepEqual(flow.interviewTargets(s,false,91),[91]);
+assert.deepEqual(flow.interviewTargets({...s,selectedIds:[]},false,null),[]);
+assert.deepEqual(flow.interviewTargets({...s,selectedIds:[]},true,null),[]);
+
 assert.equal(flow.stageAccess({...s,population:[]},1).target,'sample-settings');
 assert.equal(flow.stageAccess({...s,questionnaire:[]},1).target,'questionnaire-editor');
 assert.equal(flow.stageAccess({...s,selectionReason:''},2).target,'selection-reason');
@@ -97,6 +109,15 @@ upstream({responses:[s.responses[0],{respondentId:91,answers:{q1:'invalid-option
 upstream({turns:[{question:'Почему?',answer:'Есть оговорки.'},{question:'Что изменить?',answer:'Улучшить доступность.'}]});
 const interviewBatch = {...base,action:'interviewBatch',respondent:s.population[0],questions:['Почему?','Что изменить?'],history:[],survey:[]};
 assert.equal((await POST(request(interviewBatch))).status,200);
+upstream({turns:[{question:'Что изменить?',answer:'Улучшить доступность.'},{question:'Почему?',answer:'Есть оговорки.'}]});
+assert.equal((await POST(request(interviewBatch))).status,502); // Question order stays fixed.
+global.fetch=async()=>Response.json({choices:[{finish_reason:'length',message:{content:'{\"turns\":['}}]});
+const truncated=await POST(request(interviewBatch));assert.equal(truncated.status,502);
+assert.match((await truncated.json()).error,/прервался/);
+// A completed, validated JSON result is usable even if the provider reports length.
+global.fetch=async()=>Response.json({choices:[{finish_reason:'length',message:{content:JSON.stringify({turns:[{question:'Почему?',answer:'Есть оговорки.'},{question:'Что изменить?',answer:'Улучшить доступность.'}]})}}]});
+assert.equal((await POST(request(interviewBatch))).status,200);
+
 upstream({turns:[{question:'Почему?',answer:'Есть оговорки.'}]});
 assert.equal((await POST(request(interviewBatch))).status,502);
 upstream({answer:''});assert.equal((await POST(request({...base,action:'interview',respondent:s.population[0],interviewQuestion:'Почему?',history:[],survey:[]}))).status,502);
@@ -153,6 +174,16 @@ for (const [status, expected] of [[401, /отклонил/], [402, /отключ
   assert.equal(response.status, status);
   assert.match((await response.json()).error.message, expected);
 }
+let interviewPayload;
+global.fetch=async(url,options)=>{interviewPayload=JSON.parse(options.body);return Response.json({choices:[{message:{content:JSON.stringify({turns:[{question:'Почему?',answer:'Есть оговорки.'},{question:'Что изменить?',answer:'Улучшить доступность.'}]})}}]});};
+assert.equal((await POST(request(interviewBatch))).status,200);
+assert.equal(interviewPayload.response_format.json_schema.name,'interview_turns');
+assert.equal(interviewPayload.response_format.json_schema.schema.properties.turns.minItems,2);
+assert.equal(new RegExp(interviewPayload.response_format.json_schema.schema.properties.turns.items.properties.answer.pattern).test('Мне нужно truly inclusive обслуживание.'),false);
+assert.ok(interviewPayload.max_tokens>=3700);
+global.fetch=async()=>Response.json({error:{message:'Rate limited'}},{status:429});
+const limited=await POST(request(interviewBatch));assert.equal(limited.status,429);
+assert.match((await limited.json()).error,/бесплатный лимит/);
 delete process.env.OPENROUTER_API_KEY;
 await assert.rejects(() => provider.aiFetch('', { body: '{}' }), /Не настроен серверный ключ/);
 for (const [key, value] of Object.entries({ OPENROUTER_API_KEY: originalRouterKey, OPENROUTER_MODEL: originalRouterModel })) {
@@ -162,14 +193,19 @@ global.fetch = realFetch;
 for (const [key, value] of Object.entries({ AI_PROVIDER: originalProvider, XAI_API_KEY: originalXAIKey, XAI_MODEL: originalXAIModel })) {
   if (value === undefined) delete process.env[key]; else process.env[key] = value;
 }
-// Legacy quantitative requests retain budgets and do not spend again after the cap.
+// Removed budget controls must not leave an invisible project cap blocking older studies.
 const legacyFetch=load(root+'/app/lib/budgetedFetch.ts');
 const budgetProject={...m.readStudies().find(p=>p.researchId===qa.researchId),budget:{maxRequests:1,maxTokens:30000},usage:{requests:0,tokens:0}};
 m.saveStudy(budgetProject);localStorage.setItem('research_id',budgetProject.researchId);
 global.fetch=async()=>Response.json({answer:'Сохранённый ответ.'});
 assert.equal((await legacyFetch.budgetedFetch('/api/generate-answer',{method:'POST',body:JSON.stringify({question:'Q'})})).status,200);
 assert.equal(m.readStudies().find(p=>p.researchId===qa.researchId).usage.requests,1);
-await assert.rejects(()=>legacyFetch.budgetedFetch('/api/generate-answer',{method:'POST',body:'{}'}),/бюджет/);
+assert.equal((await legacyFetch.budgetedFetch('/api/generate-answer',{method:'POST',body:'{}'})).status,200);
+assert.equal(m.readStudies().find(p=>p.researchId===qa.researchId).usage.requests,2);
+global.fetch=async()=>Response.json({error:'Достигнут лимит сервиса.'},{status:429});
+assert.equal((await legacyFetch.budgetedFetch('/api/generate-answer',{method:'POST',body:'{}'})).status,429);
+assert.deepEqual(m.readStudies().find(p=>p.researchId===qa.researchId).population,qa.population); // Provider errors never replace saved results.
+
 global.fetch=realFetch;
 // Statistical generation makes one model call for the whole sample, never one per person.
 const generator=load(root+'/app/lib/syntheticGenerator.ts');
