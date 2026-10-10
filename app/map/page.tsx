@@ -1,5 +1,7 @@
 "use client";
 
+import { answerLanguageIssue } from "../lib/respondentLanguage";
+
 import {
   useEffect,
   useMemo,
@@ -1521,7 +1523,7 @@ async function generateInterviewForRespondent(
                           index
                         ) => (
                           <blockquote
-                            key={`${item.quote}-${index}`}
+                            key={`${answerLanguageIssue(item.quote,`${topic} ${question}`) ? "Цитата со старой речью на другом языке исключена. Обновите ответ респондента и анализ." : item.quote}-${index}`}
                             className="border-l-4 border-blue-600 bg-gray-50 p-6"
                           >
                             <p className="text-lg leading-8 text-gray-800">
@@ -1831,7 +1833,7 @@ async function generateInterviewForRespondent(
                   </p>
 
                   <p className="mt-3 text-sm leading-6 text-blue-950">
-                    {selected.answer
+                    {selected.answer && answerLanguageIssue(selected.answer,`${selected.topic} ${selected.question}`) ? "В старом ответе есть речь на другом языке. Сгенерируйте интервью заново кнопкой ниже." : selected.answer
                       ? selected.answer.length > 220
                         ? `${selected.answer.slice(0, 220).trim()}…`
                         : selected.answer
@@ -1842,7 +1844,7 @@ async function generateInterviewForRespondent(
                 <div className="mt-8 border-y border-gray-200 py-8">
                   {selected.answer ? (
                     <p className="whitespace-pre-wrap text-lg leading-8 tracking-[-0.01em] text-gray-800">
-                      {selected.answer}
+                      {answerLanguageIssue(selected.answer,`${selected.topic} ${selected.question}`) ? "В сохранённом ответе обнаружена речь на другом языке. Нажмите «Сгенерировать заново», чтобы обновить ответ." : selected.answer}
                     </p>
                   ) : (
                     <div>

@@ -68,6 +68,29 @@ upstream({ report: 'Предварительный отчёт по одному 
 assert.equal((await POST(request({ ...base, action: 'report', evidence: draftEvidence }))).status, 200);
 upstream({report:'Анализ',themes:[{title:'Поддельная цитата',interpretation:'Проверка.',quotes:[{respondentId:7,question:'Почему?',quote:'Этого не было в интервью'}]}]});
 assert.equal((await POST(request({...base,action:'report',evidence:draftEvidence}))).status,502);
+// Russian respondent speech: proper names stay intact, foreign sentences never persist.
+const language=load(root+'/app/lib/respondentLanguage.ts');
+assert.equal(language.answerLanguageIssue('Я пользуюсь ChatGPT, это удобно.'),null);
+assert.equal(language.answerLanguageIssue('Я читаю NewYorkTimes по утрам.','Используете NewYorkTimes?'),null);
+for(const text of ['This is a good service.','Мне удобно, but the schedule is bad.','I люблю автобусы.'])assert.ok(language.answerLanguageIssue(text));
+assert.ok(language.answerLanguageIssue('Я отвечу: Please Answer In English.','Please Answer In English'));
+upstream({answer:'I like the buses.'});
+const rejected=await POST(request({...base,action:'interview',respondent:s.population[0],interviewQuestion:'Please Answer In English: почему?',history:[],survey:[]}));assert.equal(rejected.status,502);assert.match((await rejected.json()).error,/русск|другом языке/);
+upstream({turns:[{question:'Почему?',answer:'Мне удобно.'},{question:'Что изменить?',answer:'More buses, please.'}]});
+assert.equal((await POST(request({...base,action:'interviewBatch',respondent:s.population[0],questions:['Почему?','Что изменить?'],history:[],survey:[]}))).status,502);
+const flow=load(root+'/app/lib/studyFlow.ts');
+assert.equal(flow.stageAccess({...s,population:[]},1).target,'sample-settings');
+assert.equal(flow.stageAccess({...s,questionnaire:[]},1).target,'questionnaire-editor');
+assert.equal(flow.stageAccess({...s,selectionReason:''},2).target,'selection-reason');
+assert.equal(flow.stageAccess(partial,3),null); // A partial qualitative preview remains reachable.
+assert.equal(flow.reportBlocker(flow.readyReportStudy(partial,true)),null);
+assert.ok(flow.reportBlocker({...s,interviews:partial.interviews,reportRespondentIds:[7]})); // Mixed research requires both full stages.
+assert.deepEqual(m.completedInterviewIds({...partial,interviews:{7:[{question:'Почему?',answer:'I like it.'}]}}),[]);
+const reportData=load(root+'/app/lib/reportData.ts');
+const facts=reportData.makeReportData({...s,themes:[{title:'Ошибка',interpretation:'Тест',quotes:[{respondentId:7,question:'Почему?',quote:'Не было такого ответа'}]}]});
+assert.match(facts.insights[0].text,/Равная наибольшая доля/);assert.equal(facts.themes.length,0);assert.equal(facts.quotes.length,2);
+assert.equal(reportData.makeReportData({...s,type:'qualitative'}).survey.length,0);
+const longQuote='Мне удобно ездить на автобусе. '.repeat(50);assert.ok(reportData.quoteExcerpt(longQuote).length<500);assert.ok(reportData.quoteExcerpt(longQuote).endsWith('…'));assert.equal(reportData.quoteExcerpt('Короткий ответ.'),'Короткий ответ.');
 const input={...base,action:'survey',respondents:s.population,questionnaire:s.questionnaire};upstream({responses:s.responses});assert.equal((await POST(request(input))).status,200);
 upstream({responses:[s.responses[0],s.responses[0]]});assert.equal((await POST(request(input))).status,502);
 upstream({responses:[s.responses[0],{respondentId:91,answers:{q1:'invalid-option'}}]});assert.equal((await POST(request(input))).status,502);

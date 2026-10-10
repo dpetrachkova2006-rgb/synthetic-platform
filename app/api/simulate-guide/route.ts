@@ -1,4 +1,5 @@
 import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
+import { assertRussianAnswer, RUSSIAN_ANSWER_INSTRUCTION } from '../../lib/respondentLanguage';
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -591,7 +592,7 @@ export async function POST(request: Request) {
             {
               role: "system",
               content:
-                "Ты профессиональный исследователь качественных методов. Ты моделируешь пилотные глубинные интервью и проверяешь работу гайда. Возвращай только корректный JSON.",
+                "Ты профессиональный исследователь качественных методов. Ты моделируешь пилотные глубинные интервью и проверяешь работу гайда. Возвращай только корректный JSON. " + RUSSIAN_ANSWER_INSTRUCTION,
             },
             {
               role: "user",
@@ -729,6 +730,7 @@ export async function POST(request: Request) {
       );
     }
 
+    for(const interview of result.interviews) for(const turn of interview.turns) assertRussianAnswer(turn.answer,`${topic} ${guide}`);
     return NextResponse.json({
       result,
       meta: {

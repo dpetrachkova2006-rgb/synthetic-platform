@@ -2,6 +2,10 @@
 
 import { checkBudget, compactProfile, defaultBudget, estimateTokens, estimateStudy, surveyBatchSize } from '../lib/researchEconomy';
 import PDFReportButton from '../components/PDFReportButton';
+import ReportPreview from '../components/ReportPreview';
+import StageChecklist from '../components/StageChecklist';
+import { guideValid, questionnaireValid, readyReportStudy, stageAccess, stageChecks, type FlowCheck } from '../lib/studyFlow';
+import { answerLanguageIssue } from '../lib/respondentLanguage';
 import ModelingBasis from '../components/ModelingBasis';
 import { sourcesForFrame, type DataFrame } from '../lib/statisticalData';
 import Link from 'next/link';
@@ -39,6 +43,7 @@ function StudyContent() {
   const lock = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const currentStudy = useRef<Study | null>(null);
+  const pendingFocus = useRef('');
 
   useEffect(() => {
     controller.current?.abort();
@@ -73,6 +78,7 @@ function StudyContent() {
     const panel = document.getElementById('study-stage');
     panel?.scrollIntoView({ block: 'start' });
     panel?.focus({ preventScroll: true });
+    if(pendingFocus.current){const target=document.getElementById(pendingFocus.current);target?.scrollIntoView({block:'center'});(target?.matches('input,textarea,select,button')?target:target?.querySelector<HTMLElement>('input,textarea,select,button'))?.focus();pendingFocus.current='';}
   }, [stage, researchId]);
 
   function commit(next: Study) {
@@ -85,6 +91,20 @@ function StudyContent() {
   function update(patch: Partial<Study>) {
     if (!study || lock.current) return;
     try { commit({ ...study, ...patch }); setError(''); } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка сохранения.'); }
+  }
+  function resolve(check:FlowCheck) {
+    if(!study||busy)return;
+    const blocked=stageAccess(study,check.stage);
+    const target=blocked??check;
+    pendingFocus.current=target.target;
+    update({stage:target.stage});
+    requestAnimationFrame(()=>{const element=document.getElementById(target.target);element?.scrollIntoView({block:'center'});(element?.matches('input,textarea,select,button')?element:element?.querySelector<HTMLElement>('input,textarea,select,button'))?.focus();});
+  }
+  function goToStage(next:number) {
+    if(!study)return;
+    const blocked=stageAccess(study,next);
+    if(blocked){resolve(blocked);setError(`Перед следующим этапом: ${blocked.help}`);return;}
+    update({stage:next});
   }
   async function run(label: string, action: () => Promise<void>) {
     if (lock.current) return;
@@ -148,12 +168,13 @@ function StudyContent() {
       for (const id of all ? current.selectedIds : [activeId]) {
         const respondent = current.population.find(p => p.id === id);
         if (!respondent || !current.selectedIds.includes(id)) throw new Error('Респондент не выбран из исходной выборки.');
-        const pendingQuestions = guideQuestions(current.guide).filter(q => !current.interviews[id]?.some(t => t.question === q && t.answer.trim()));
+        const pendingQuestions = guideQuestions(current.guide).filter(q => !current.interviews[id]?.some(t => t.question === q && t.answer.trim() && !answerLanguageIssue(t.answer,`${current.topic} ${current.question} ${q}`)));
         for (let offset = 0; offset < pendingQuestions.length; offset += 8) {
           const questions = pendingQuestions.slice(offset, offset + 8);
           const response = current.responses.find(r => r.respondentId === id);
           const data = await api(current, { action: 'interviewBatch', respondent: compactProfile(respondent, 'interview'), questions, history: current.interviews[id] ?? [], survey: current.questionnaire.map(item => ({ question: item.text, answer: response?.answers[item.id] ?? '' })) });
-          current = commit({ ...current, usage: currentStudy.current?.usage, report: '', interviews: { ...current.interviews, [id]: [...(current.interviews[id] ?? []), ...data.turns] } });
+          const replaced=(current.interviews[id]??[]).filter(t=>questions.includes(t.question));
+          current = commit({ ...current, usage: currentStudy.current?.usage, report: '', themes:[], replacedInterviews:[...(current.replacedInterviews??[]),...replaced.map(t=>({...t,respondentId:id,replacedAt:new Date().toISOString()}))], interviews: { ...current.interviews, [id]: [...(current.interviews[id] ?? []).filter(t=>!questions.includes(t.question)), ...data.turns] } });
           setBusy(`Интервью #${id}: ${current.interviews[id].length} / ${guideQuestions(current.guide).length}`);
         }
       }
@@ -178,8 +199,8 @@ function StudyContent() {
   const candidates = study ? filterRespondents(study, effectiveFilter) : [];
   const respondent = study?.population.find(p => p.id === activeId);
   const guide = guideQuestions(study?.guide ?? '');
-  const validQuestionnaire = !!study?.questionnaire.length && study.questionnaire.every(q => q.text.trim() && q.options.length >= 2 && q.options.length <= 12 && q.options.every(o => o.trim().length > 0 && o.length <= 200) && new Set(q.options).size === q.options.length);
-  const validGuide = guide.length > 0 && guide.length <= 30 && new Set(guide).size === guide.length && guide.every(q => q.length <= 2000);
+  const validQuestionnaire = !!study && questionnaireValid(study);
+  const validGuide = !!study && guideValid(study);
   const completedIds = study ? completedInterviewIds(study) : [];
   const remainingIds = study?.selectedIds.filter(id => !completedIds.includes(id)) ?? [];
   const estimate = study ? estimateStudy(study, study.population.length || size) : null;
@@ -206,9 +227,10 @@ function StudyContent() {
           <p className="eyebrow">{TYPE_LABELS[study.type]}</p><h1 className="mt-3 text-3xl font-black">{study.topic}</h1><p className="mt-3 text-gray-700">{study.question}</p>
           <p className="mt-2 break-all text-xs text-gray-500">Проект {study.researchId} · данные сохраняются в этом браузере</p>
           <nav aria-label="Этапы исследования" className="my-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{STEPS.map((step, index) => {
-            const disabled = !!busy || (index === 1 && !study.population.length) || (index >= 1 && study.type !== 'qualitative' && !surveyComplete(study)) || (index >= 2 && (!study.selectedIds.length || !study.selectionReason.trim()));
-            return <button key={step} disabled={disabled} aria-current={study.stage === index ? 'step' : undefined} onClick={() => update({ stage: index })} className={`rounded-xl border p-4 text-left text-sm font-bold ${study.stage === index ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-200'} disabled:opacity-40`}>{index + 1}. {index === 0 && study.type === 'qualitative' ? 'Группа респондентов' : step}</button>;
+            const blocked=stageAccess(study,index),done=stageChecks(study,index).every(c=>c.done);
+            return <button key={step} disabled={!!busy} aria-current={study.stage === index ? 'step' : undefined} aria-describedby={`step-help-${index}`} onClick={() => goToStage(index)} className={`rounded-xl border p-4 text-left text-sm font-bold ${study.stage === index ? 'border-blue-600 bg-blue-50 text-blue-700' : blocked?'border-gray-200 bg-gray-50 text-gray-500':'border-gray-200'} disabled:opacity-40`}><span>{done?'✓ ':''}{index + 1}. {index === 0 && study.type === 'qualitative' ? 'Группа респондентов' : step}</span><span id={`step-help-${index}`} className="mt-2 block text-xs font-normal leading-5">{blocked?`Сначала: ${blocked.label.toLocaleLowerCase('ru')}`:study.stage===index?'Вы здесь':done?'Готово · можно вернуться':'Можно открыть'}</span></button>;
           })}</nav>
+          <StageChecklist checks={stageChecks(study,study.stage)} onResolve={resolve}/>
           <aside className="my-5 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm">
             <p>Оценка по текущей анкете и выбранным участникам: {estimate?.requests} запросов, около {estimate?.tokens.toLocaleString('ru')} токенов (приблизительно, без скрытых рассуждений модели). {providerInfo ? `${providerInfo.provider} / ${providerInfo.model}: ${providerInfo.priceNote}.` : 'Тариф сервера уточняется…'}</p>
             <p className="mt-2">{providerInfo?.maxPricePerMillion !== null && providerInfo?.maxPricePerMillion !== undefined ? `Ориентир стоимости оценки: до $${((estimate?.tokens ?? 0)*providerInfo.maxPricePerMillion/1000000).toFixed(4)} по серверному тарифу; точное потребление зависит от модели.` : "Для денежной оценки платных моделей нужен серверный тариф за миллион токенов."}</p><p className="mt-2">Использовано: {study.usage?.requests ?? 0} запросов; {study.usage?.tokens ?? 0} токенов{study.usage?.estimated ? ' (оценка)' : ''}. Параллельность: 1. Результаты сохраняются после каждого пакета; повторяются только незавершённые пакеты.</p>
@@ -218,27 +240,28 @@ function StudyContent() {
           <fieldset id="study-stage" tabIndex={-1} disabled={!!busy} className="min-w-0 disabled:opacity-70">
           {study.stage === 0 && <div className="space-y-8">
             <h2 className="text-2xl font-black">{study.type === 'qualitative' ? 'Создание группы' : 'Выборка и анкета'}</h2>
-            {!study.population.length ? <><div className="grid gap-5 sm:grid-cols-3">
+            {!study.population.length ? <><div id="sample-settings" className="grid gap-5 sm:grid-cols-3">
               <label className="sm:col-span-3">Основа выборки<select className={field} value={dataFrame} onChange={e=>setDataFrame(e.target.value as DataFrame)}><option value="wb-rus-2024">Россия 20–79 лет: World Bank / ООН, 2024</option><option value="modeled">Модельные характеристики без статистической калибровки</option></select><span className="mt-2 block text-sm text-gray-500">При использовании статистики возраст ограничен 20–79 годами; фильтры применяются внутри этой рамки. Возраст внутри пятилетнего интервала моделируется равномерно, города и прочие характеристики — модельные.</span></label>
               <label>Размер выборки (1–500)<input className={field} type="number" min={1} max={500} value={size} onChange={e => setSize(Number(e.target.value))} /></label>
               <label>Пол<select className={field} value={gender} onChange={e => setGender(e.target.value)}><option>Все</option><option>женщина</option><option>мужчина</option></select></label>
               <label>Возраст<select className={field} value={age} onChange={e => setAge(e.target.value)}>{['Все', '18–25', '26–40', '41–60', '61–85'].map(v => <option key={v}>{v}</option>)}</select></label>
             </div><button className={button} disabled={!Number.isInteger(size) || size < 1 || size > 500} onClick={generate}>Сформировать выборку</button></> : <p className="app-badge">В исходной выборке {study.population.length} респондентов. Их ID сохраняются на всех этапах.</p>}
             {study.type !== 'qualitative' && <>
-              <p className="text-gray-700">Анкета: до 10 вопросов с одним вариантом ответа. После начала опроса анкета фиксируется.</p>
+              <p id="questionnaire-editor" className="text-gray-700">Анкета: до 10 вопросов с одним вариантом ответа. После начала опроса анкета фиксируется.</p>
               {study.questionnaire.map((q, index) => <div className="editorial-card p-5" key={q.id}>
                 <label>Вопрос {index + 1}<input className={field} maxLength={1000} disabled={study.responses.length > 0} value={q.text} onChange={e => update({ questionnaire: study.questionnaire.map(item => item.id === q.id ? { ...item, text: e.target.value } : item) })} /></label>
                 <label className="mt-4 block">Варианты ответа (разделитель — точка с запятой)<input className={field} disabled={study.responses.length > 0} value={q.options.join(';')} onChange={e => update({ questionnaire: study.questionnaire.map(item => item.id === q.id ? { ...item, options: e.target.value.split(';') } : item) })} /></label>
                 {!study.responses.length && <button className="mt-3 text-sm text-gray-500 underline" onClick={() => update({ questionnaire: study.questionnaire.filter(item => item.id !== q.id) })}>Удалить вопрос</button>}
               </div>)}
-              <div className="flex flex-wrap gap-3">
+              <div id="survey-actions" className="flex flex-wrap gap-3">
                 <button className="app-button-secondary min-h-12 px-5" disabled={study.responses.length > 0 || study.questionnaire.length >= 10} onClick={() => update({ questionnaire: [...study.questionnaire, { id: crypto.randomUUID(), text: '', options: ['Да', 'Нет', 'Затрудняюсь ответить'] }] })}>Добавить вопрос</button>
                 <button className={button} disabled={!study.population.length || !validQuestionnaire || surveyComplete(study)} onClick={survey}>{study.responses.length ? 'Продолжить моделирование' : 'Запустить моделирование ответов'}</button>
               </div>
               <p>Получено ответов: {study.responses.length} / {study.population.length}</p>
               {!!study.responses.length && <Quantitative study={study} />}
-              <button className={button} disabled={!surveyComplete(study)} onClick={() => update({ stage: 1 })}>Перейти к отбору респондентов →</button>
+              <button className={surveyComplete(study)?button:'app-button-secondary min-h-12 px-5'} onClick={() => goToStage(1)}>Перейти к отбору респондентов →</button>
             </>}
+            {study.type==='qualitative'&&study.population.length>0&&<button className={button} onClick={()=>goToStage(1)}>Выбрать участников для интервью →</button>}
           </div>}
           {study.stage === 1 && <div className="space-y-6">
             <h2 className="text-2xl font-black">Отбор из исходной выборки</h2><p>Можно сочетать ручной выбор, фильтры и контрастные группы. Выбрано: {study.selectedIds.length} (до 30).</p>
@@ -260,14 +283,14 @@ function StudyContent() {
                 update({ selectedIds, selectionReason: `${study.selectionReason}\nКонтрастные группы по вопросу «${currentQuestion.text}»: ${contrast.join(' / ')}; до 3 участников на группу, первые подходящие ID.`, report: '' });
               } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка отбора.'); }
             }}>Добавить контрастные группы</button></div>}
-            <div className="max-h-96 overflow-auto rounded-xl border border-gray-200"><table className="w-full text-left text-sm"><thead><tr className="bg-gray-100"><th className="p-3">Выбор</th><th>Респондент</th><th>Профиль</th><th>Ответ</th></tr></thead><tbody>{candidates.map(p => <tr key={p.id} className="border-t border-gray-200"><td className="p-3"><input aria-label={`Выбрать респондента ${p.id}`} type="checkbox" checked={study.selectedIds.includes(p.id)} disabled={!study.selectedIds.includes(p.id) && study.selectedIds.length >= 30} onChange={e => update({ selectedIds: e.target.checked ? [...study.selectedIds, p.id] : study.selectedIds.filter(id => id !== p.id), report: '' })} /></td><td>#{p.id} {p.name}</td><td>{p.gender}, {p.age}, {p.city}</td><td>{study.responses.find(r => r.respondentId === p.id)?.answers[currentQuestion?.id ?? ''] ?? 'Нет анкеты'}</td></tr>)}</tbody></table></div>
+            <div id="respondent-selection" className="max-h-96 overflow-auto rounded-xl border border-gray-200"><table className="w-full text-left text-sm"><thead><tr className="bg-gray-100"><th className="p-3">Выбор</th><th>Респондент</th><th>Профиль</th><th>Ответ</th></tr></thead><tbody>{candidates.map(p => <tr key={p.id} className="border-t border-gray-200"><td className="p-3"><input aria-label={`Выбрать респондента ${p.id}`} type="checkbox" checked={study.selectedIds.includes(p.id)} disabled={!study.selectedIds.includes(p.id) && study.selectedIds.length >= 30} onChange={e => update({ selectedIds: e.target.checked ? [...study.selectedIds, p.id] : study.selectedIds.filter(id => id !== p.id), report: '' })} /></td><td>#{p.id} {p.name}</td><td>{p.gender}, {p.age}, {p.city}</td><td>{study.responses.find(r => r.respondentId === p.id)?.answers[currentQuestion?.id ?? ''] ?? 'Нет анкеты'}</td></tr>)}</tbody></table></div>
             <p className="text-sm text-gray-500">Выбранные ID: {study.selectedIds.join(', ') || 'Пока нет'}</p>
-            <label className="block">Принципы отбора (включая ручной выбор)<textarea className={field} maxLength={6000} value={study.selectionReason} onChange={e => update({ selectionReason: e.target.value, report: '' })} /></label>
-            <button className={button} disabled={!study.selectedIds.length || !study.selectionReason.trim()} onClick={() => { setActiveId(study.selectedIds[0]); update({ stage: 2 }); }}>Перейти к глубинным интервью</button>
+            <label className="block">Принципы отбора (включая ручной выбор)<textarea id="selection-reason" className={field} placeholder="Например: выбраны участники разного возраста с противоположными ответами на анкету." maxLength={6000} value={study.selectionReason} onChange={e => update({ selectionReason: e.target.value, report: '' })} /></label>
+            <button className={button} onClick={() => { setActiveId(study.selectedIds[0]??null); goToStage(2); }}>Перейти к глубинным интервью</button>
           </div>}
           {study.stage === 2 && <div className="space-y-6">
             <h2 className="text-2xl font-black">Глубинные интервью</h2>
-            <label className="block">Гайд: один вопрос на строку (до 30)<textarea className={`${field} min-h-40`} disabled={Object.values(study.interviews).some(turns => turns.length > 0)} value={study.guide} onChange={e => update({ guide: e.target.value, report: '' })} /></label>
+            <label className="block">Гайд: один вопрос на строку (до 30)<textarea id="interview-guide" placeholder="Как вы обычно решаете эту задачу?&#10;Что вам удобно, а что вызывает сложности?" className={`${field} min-h-40`} disabled={Object.values(study.interviews).some(turns => turns.length > 0)} value={study.guide} onChange={e => update({ guide: e.target.value, report: '' })} /></label>
             <p className="text-sm text-gray-500">Вопросы должны быть уникальными, не длиннее 2000 символов. После первого ответа гайд фиксируется.</p>
             <label className="block">Загрузить гайд (.txt)<input className="mt-2 block" type="file" accept=".txt,text/plain" disabled={Object.values(study.interviews).some(t => t.length > 0)} onChange={async e => { try { const file = e.target.files?.[0]; if (file) { if (file.size > 60000) throw new Error('Гайд должен быть не больше 60 КБ.'); update({ guide: await file.text(), report: '' }); } } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка файла.'); } }} /></label>
             <label className="block">Выбранный респондент<select className={field} value={activeId ?? ''} onChange={e => setActiveId(Number(e.target.value))}><option value="">Откройте карточку</option>{study.selectedIds.map(id => <option key={id} value={id}>#{id} {study.population.find(p => p.id === id)?.name} · ответов {study.interviews[id]?.length ?? 0}/{guide.length}</option>)}</select></label>
@@ -275,11 +298,10 @@ function StudyContent() {
               <Comparison study={study} id={respondent.id} />
             </div>}
             <p role="status">Завершено интервью: {completedIds.length} из {study.selectedIds.length}. {remainingIds.length > 0 && `Осталось: ${remainingIds.length}. В разделе отчёта можно посмотреть готовность исследования.`}</p>
-            <div className="flex flex-wrap gap-3"><button className={button} disabled={activeId === null || !validGuide} onClick={() => interview(false)}>Провести / продолжить интервью</button><button className="app-button-secondary min-h-12 px-5" disabled={activeId === null || !validGuide} onClick={() => interview(true)}>Интервью со всеми выбранными</button><button className={button} onClick={() => update({ stage: 3 })}>Перейти к общему отчёту →</button></div>
+            <div id="interview-actions" className="flex flex-wrap gap-3"><button className={button} disabled={activeId === null || !validGuide} onClick={() => interview(false)}>Провести / продолжить интервью</button><button className="app-button-secondary min-h-12 px-5" disabled={activeId === null || !validGuide} onClick={() => interview(true)}>Интервью со всеми выбранными</button><button className={button} onClick={() => goToStage(3)}>Перейти к общему отчёту →</button></div>
           </div>}
           {study.stage === 3 && <div className="space-y-6">
             <h2 className="text-2xl font-black">Единый аналитический отчёт</h2>
-            {study.type === 'mixed' && <Quantitative study={study} />}
             <p>Исходная выборка: {study.population.length}. Участников интервью: {study.selectedIds.length}.</p><p className="whitespace-pre-wrap">Принципы отбора: {study.selectionReason}</p>
             {remainingIds.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <p>Завершено интервью: {completedIds.length} из {study.selectedIds.length}. Для итогового отчёта завершите интервью с остальными участниками.</p>
@@ -287,12 +309,14 @@ function StudyContent() {
               <button className="app-button-secondary mt-3 min-h-12 px-5" onClick={() => { setActiveId(remainingIds[0]); update({ stage: 2 }); }}>Продолжить оставшиеся интервью</button>
               {study.type === 'qualitative' && completedIds.length > 0 && <><p className="mt-3">Предварительный отчёт включает только {completedIds.length} завершённых интервью. Остальные участники не включаются в анализ.</p><button className={`${button} mt-3`} onClick={() => report(true)}>Сформировать предварительный отчёт по {completedIds.length} интервью</button></>}
             </div>}
-            <button className={button} disabled={!interviewsComplete(study)} onClick={() => report()}>{study.report ? 'Обновить аналитический отчёт' : 'Сформировать аналитический отчёт'}</button>
-            {study.report && <article className="editorial-card whitespace-pre-wrap p-6 leading-7">{study.reportRespondentIds && study.reportRespondentIds.length < study.selectedIds.length && <p className="mb-4 font-bold text-amber-800">Предварительный отчёт: {study.reportRespondentIds.length} из {study.selectedIds.length} выбранных участников.</p>}{study.report}</article>}
+            <p className="text-sm leading-6 text-gray-600">Сводка и графики строятся из сохранённых данных. Для тематической интерпретации нажмите «Добавить анализ». Скачать отчёт можно без дополнительного запроса к модели.</p>
+            <div className="flex flex-wrap items-center gap-4"><button className="app-button-secondary min-h-12 px-5" disabled={!interviewsComplete(study)} onClick={() => report()}>{study.report ? 'Обновить анализ' : 'Добавить анализ тем и мотивов'}</button><Link className="text-sm font-bold text-blue-700 underline" href={`/report?id=${study.researchId}`}>Открыть отчёт на отдельной странице ↗</Link></div>
+            <PDFReportButton study={study} allowPartial/>
+            {(completedIds.length>0||study.responses.length>0)&&<ReportPreview study={readyReportStudy(study,true)}/>}
             <h3 className="text-xl font-black">Анкета и интервью каждого участника</h3>{study.selectedIds.map(id => <details className="editorial-card p-5" key={id}><summary className="cursor-pointer font-bold">#{id} {study.population.find(p => p.id === id)?.name}</summary><div className="mt-4"><Comparison study={study} id={id} /></div></details>)}
             <p className="text-sm text-gray-500">Все ответы синтетические. Эти результаты не заменяют эмпирическое исследование и не позволяют оценить реальное общественное мнение.</p>
           </div>}
-          <ModelingBasis study={study} /><PDFReportButton study={study} allowPartial /><div className="mt-10 flex flex-wrap gap-4 border-t border-gray-200 pt-6"><button className="app-button-secondary min-h-12 px-5" onClick={download}>Резервная копия проекта JSON</button><a href={`/study?type=${study.type}`} className="app-button-secondary min-h-12 px-5">Новый проект</a></div>
+          {study.stage!==3&&<ModelingBasis study={study}/>}<div className="mt-10 flex flex-wrap gap-4 border-t border-gray-200 pt-6"><button className="app-button-secondary min-h-12 px-5" onClick={download}>Резервная копия проекта JSON</button><a href={`/study?type=${study.type}`} className="app-button-secondary min-h-12 px-5">Новый проект</a></div>
           </fieldset>
         </>}
       </div>
@@ -303,5 +327,5 @@ function Quantitative({ study }: { study: Study }) {
   return <section className="space-y-6" aria-label="Количественные результаты">{distributions(study).map(q => <div key={q.id} className="editorial-card p-5"><h3 className="mb-4 font-black">{q.text}</h3><table className="w-full text-left text-sm"><thead><tr><th>Ответ</th><th>Число</th><th>% ответивших</th><th className="hidden sm:table-cell">Распределение</th></tr></thead><tbody>{q.distribution.map(d => { const answered = q.distribution.reduce((sum, row) => sum + row.count, 0); const percent = answered ? d.count / answered * 100 : 0; return <tr key={d.option} className="border-t border-gray-200"><td className="py-3 pr-2">{d.option}</td><td>{d.count}</td><td>{percent.toFixed(1)}%</td><td className="hidden w-1/3 sm:table-cell"><div className="h-3 rounded bg-gray-100"><div className="h-3 rounded bg-blue-600" style={{ width: `${percent}%` }} /></div></td></tr>; })}</tbody></table></div>)}</section>;
 }
 function Comparison({ study, id }: { study: Study; id: number }) {
-  return <div className="grid gap-5 md:grid-cols-2"><div><h4 className="mb-3 font-black">Количественная анкета</h4>{study.questionnaire.length ? study.questionnaire.map(q => <p key={q.id} className="mb-3"><strong>{q.text}</strong><br />{study.responses.find(r => r.respondentId === id)?.answers[q.id] ?? 'Ответ ещё не получен'}</p>) : <p>В качественном исследовании анкета не проводилась.</p>}</div><div><h4 className="mb-3 font-black">Расшифровка интервью</h4>{study.interviews[id]?.length ? study.interviews[id].map((turn, i) => <div className="mb-4" key={i}><p className="font-bold">{turn.question}</p><p className="mt-2 whitespace-pre-wrap leading-7">{turn.answer}</p></div>) : <p>Интервью ещё не проведено.</p>}</div></div>;
+  return <div className="grid gap-5 md:grid-cols-2"><div><h4 className="mb-3 font-black">Количественная анкета</h4>{study.questionnaire.length ? study.questionnaire.map(q => <p key={q.id} className="mb-3"><strong>{q.text}</strong><br />{study.responses.find(r => r.respondentId === id)?.answers[q.id] ?? 'Ответ ещё не получен'}</p>) : <p>В качественном исследовании анкета не проводилась.</p>}</div><div><h4 className="mb-3 font-black">Расшифровка интервью</h4>{study.interviews[id]?.length ? study.interviews[id].map((turn, i) => <div className="mb-4" key={i}><p className="font-bold">{turn.question}</p><p className="mt-2 whitespace-pre-wrap leading-7">{answerLanguageIssue(turn.answer,`${study.topic} ${study.question} ${turn.question}`) ? 'В старом ответе обнаружена речь на другом языке. Запустите интервью ещё раз: этот вопрос будет обновлён, а исходный ответ останется в резервной копии проекта.' : turn.answer}</p></div>) : <p>Интервью ещё не проведено.</p>}</div></div>;
 }

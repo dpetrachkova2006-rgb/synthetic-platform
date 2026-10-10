@@ -1,5 +1,6 @@
 "use client";
 
+import { answerLanguageIssue } from '../lib/respondentLanguage';
 import { budgetedFetch } from "../lib/budgetedFetch";
 import { useState } from "react";
 import type {
@@ -128,7 +129,7 @@ export default function RespondentAnswer({
               whiteSpace: "pre-wrap",
             }}
           >
-            {answer}
+            {answerLanguageIssue(answer,`${respondent.topic} ${respondent.question}`) ? 'В сохранённом ответе обнаружена речь на другом языке. Нажмите «Сгенерировать заново», чтобы получить русский ответ.' : answer}
           </p>
 
           <button

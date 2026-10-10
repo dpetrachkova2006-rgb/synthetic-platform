@@ -60,6 +60,31 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Понятные этапы и единый визуальный язык отчётов. */
+.flow-checklist { margin: 24px 0; border: 1px solid #dce3ff; border-radius: 18px; background: #f5f7ff; padding: 22px; }
+.flow-checklist--ready { background: #f1f8f6; border-color: #cde6dd; }
+.report-sheet { margin-top: 28px; overflow: hidden; border: 1px solid #dce1eb; border-radius: 24px; background: #fff; box-shadow: 0 12px 44px rgba(24,32,46,.05); color: #18202e; }
+.report-cover { padding: 36px; color: #fff; background: linear-gradient(130deg,#172443,#244aca); }
+.report-cover__badge { border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 7px 12px; font-size: 11px; font-weight: 700; }
+.report-sheet__body { padding: 32px; }
+.report-metric { border: 1px solid #e5e9f2; border-radius: 16px; padding: 20px; }
+.report-section { scroll-margin-top: 24px; padding: 25px 0; border-top: 1px solid #e9edf5; }
+.report-heading { font-size: 24px; font-weight: 800; letter-spacing: -.025em; margin: 8px 0 22px; }
+.report-kicker { color: #3154ff; font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.report-section-link { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; background: #f3f5fa; padding: 9px 13px; font-size: 12px; font-weight: 650; }
+.report-section-link:hover { background: #e9edff; color: #3154ff; }
+.report-finding { padding: 20px; border-left: 3px solid #3154ff; background: #f6f8ff; border-radius: 0 14px 14px 0; }
+.report-chart { margin-bottom: 20px; border: 1px solid #e5e9f2; border-radius: 18px; padding: 22px; }
+.report-theme { margin: 26px 0; }
+.report-quote { margin: 16px 0; padding: 24px; border-radius: 16px; background: #f4f6fc; border-left: 3px solid #8da1fa; }
+.report-detail { margin-top: 18px; border: 1px solid #e5e9f2; border-radius: 16px; padding: 20px; }
+.report-detail summary { cursor: pointer; font-size: 14px; font-weight: 700; }
+.report-limitations { margin-top: 24px; border-radius: 16px; background: #f5f6f8; padding: 22px; }
+body button:focus-visible, body a:focus-visible, body summary:focus-visible { outline: 3px solid #8da1fa; outline-offset: 4px; }
+[id] { scroll-margin-top: 28px; }
+@media(max-width:640px) { .report-cover,.report-sheet__body { padding: 22px; } .report-chart,.report-quote { padding: 18px; } .flow-checklist { padding: 18px; } }
+@media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; } }
+
 body {
   margin: 0;
   min-height: 100vh;

@@ -1,4 +1,5 @@
 import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
+import { answerLanguageIssue, RUSSIAN_ANSWER_INSTRUCTION } from '../../lib/respondentLanguage';
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -676,7 +677,7 @@ export async function POST(
               {
                 role: "system",
                 content:
-                  "Ты реалистично моделируешь устный ответ одного участника социологического интервью. Возвращай только прямой ответ респондента без комментариев, заголовков и служебных фраз.",
+                  "Ты реалистично моделируешь устный ответ одного участника социологического интервью. Возвращай только прямой ответ респондента без комментариев, заголовков и служебных фраз. " + RUSSIAN_ANSWER_INSTRUCTION,
               },
               {
                 role: "user",
@@ -812,6 +813,8 @@ export async function POST(
       );
     }
 
+    const languageIssue = answerLanguageIssue(answer, `${respondent.topic} ${respondent.question}`);
+    if(languageIssue) return NextResponse.json({error:languageIssue,retryable:true},{status:502});
     return NextResponse.json({
       respondentId: respondent.id,
       answer,

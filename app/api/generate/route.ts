@@ -1,4 +1,5 @@
 import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
+import { assertRussianAnswer, RUSSIAN_ANSWER_INSTRUCTION } from '../../lib/respondentLanguage';
 import { NextResponse } from "next/server";
 import { findRelevantResearch } from "../../lib/researchContext";
 
@@ -334,7 +335,7 @@ ${researchContext}
             {
               role: "system",
               content:
-                'Ты создаёшь синтетических респондентов для социологических симуляций. Всегда возвращай только валидный JSON-объект вида {"respondents":[...]}. Не используй Markdown и не придумывай статистику, отсутствующую в переданном контексте.',
+                'Ты создаёшь синтетических респондентов для социологических симуляций. Всегда возвращай только валидный JSON-объект вида {"respondents":[...]}. Не используй Markdown и не придумывай статистику, отсутствующую в переданном контексте. ' + RUSSIAN_ANSWER_INSTRUCTION,
             },
             {
               role: "user",
@@ -452,6 +453,7 @@ ${researchContext}
      * Фронтенд ожидает именно массив,
      * поэтому возвращаем respondents, а не весь объект.
      */
+    for(const respondent of respondents) assertRussianAnswer(respondent.answer,`${topic} ${question}`);
     return NextResponse.json(respondents);
   } catch (error) {
     console.error(

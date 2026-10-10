@@ -1,4 +1,5 @@
 import { compactProfile } from "./researchEconomy";
+import { answerLanguageIssue } from './respondentLanguage';
 import type { SyntheticRespondent } from './syntheticGenerator';
 
 export type ResearchType = 'quantitative' | 'qualitative' | 'mixed';
@@ -6,6 +7,7 @@ export type SurveyQuestion = { id: string; text: string; options: string[] };
 export type SurveyResponse = { respondentId: number; answers: Record<string, string> };
 export type InterviewTurn = { question: string; answer: string };
 export type Study = {
+  replacedInterviews?: {respondentId:number; question:string; answer:string; replacedAt:string}[];
   themes?: { title: string; interpretation: string; quotes: { respondentId: number; question: string; quote: string }[] }[];
   sources?: { title: string; organization: string; date: string; geography: string; population: string; version: string; retrievedAt: string; application: string; url: string }[];
   legacy?: Record<string, string>;
@@ -46,7 +48,7 @@ export function surveyComplete(study: Study): boolean {
 export function guideQuestions(guide: string): string[] { return guide.split('\n').map(q => q.trim()).filter(Boolean); }
 export function completedInterviewIds(study: Study): number[] {
   const questions = guideQuestions(study.guide);
-  return questions.length ? study.selectedIds.filter(id => questions.every(q => study.interviews[id]?.some(t => t.question === q && t.answer.trim()))) : [];
+  return questions.length ? study.selectedIds.filter(id => questions.every(q => study.interviews[id]?.some(t => t.question === q && t.answer.trim() && !answerLanguageIssue(t.answer,`${study.topic} ${study.question} ${q}`)))) : [];
 }
 export function interviewsComplete(study: Study): boolean {
   return study.selectedIds.length > 0 && completedInterviewIds(study).length === study.selectedIds.length;
