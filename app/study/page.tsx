@@ -129,7 +129,23 @@ function StudyContent() {
     const reserved = estimateTokens(payload) + 6000;
     commit({ ...latest, usage: { ...usage, requests: usage.requests + 1, tokens: usage.tokens + reserved, estimated: true } });
     if (controller.current?.signal.aborted) throw new DOMException('Отменено', 'AbortError');
-    const response = await fetch('/api/study', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.current?.signal, body: JSON.stringify({ researchId: current.researchId, topic: current.topic, question: current.question, ...payload }) });
+    const options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.current?.signal, body: JSON.stringify({ researchId: current.researchId, topic: current.topic, question: current.question, ...payload }) };
+    let response = await fetch('/api/study', options);
+    for (let retry = 0; retry < 3 && response.status === 429; retry++) {
+      const delay = Number(response.headers.get('Retry-After'));
+      // Retry only a short, explicit provider pause; daily quotas and oversized requests need attention.
+      if (!Number.isFinite(delay) || delay <= 0 || delay > 90) break;
+      setBusy('Короткая пауза перед следующим ответом…');
+      await new Promise<void>((resolve, reject) => {
+        const signal = controller.current?.signal;
+        const abort = () => { window.clearTimeout(timer); reject(new DOMException('Отменено', 'AbortError')); };
+        const timer = window.setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, Math.ceil(delay * 1000) + 500);
+        signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) abort();
+      });
+      response = await fetch('/api/study', options);
+      setBusy('Продолжаем исследование…');
+    }
     const data = await response.json().catch(() => { throw new Error('Сервис не ответил вовремя. Полученные ответы сохранены — попробуйте продолжить.'); });
     if (!response.ok) throw new Error(data.error || 'Ошибка генерации.');
     if (data.researchId !== current.researchId) throw new Error('Ответ относится к другому проекту.');
@@ -173,13 +189,15 @@ function StudyContent() {
     if (!study || !guideValid(study) || !study.selectedIds.length) return;
     await run('Проводим интервью…', async () => {
       let current = study;
+      const status = await fetch('/api/ai-status', { cache: 'no-store', signal: controller.current?.signal }).then(r => r.json());
+      const batchSize = Number.isInteger(status.interviewBatchSize) && status.interviewBatchSize >= 1 && status.interviewBatchSize <= INTERVIEW_BATCH ? status.interviewBatchSize : 1;
       for (const id of interviewTargets(current, all, activeId)) {
         setActiveId(id);
         const respondent = current.population.find(p => p.id === id);
         if (!respondent || !current.selectedIds.includes(id)) throw new Error('Респондент не выбран из исходной выборки.');
         const pendingQuestions = guideQuestions(current.guide).filter(q => !current.interviews[id]?.some(t => t.question === q && t.answer.trim() && !answerLanguageIssue(t.answer,`${current.topic} ${current.question} ${q}`)));
-        for (let offset = 0; offset < pendingQuestions.length; offset += INTERVIEW_BATCH) {
-          const questions = pendingQuestions.slice(offset, offset + INTERVIEW_BATCH);
+        for (let offset = 0; offset < pendingQuestions.length; offset += batchSize) {
+          const questions = pendingQuestions.slice(offset, offset + batchSize);
           setBusy(`Участник ${current.selectedIds.indexOf(id) + 1} из ${current.selectedIds.length} · получаем ответы`);
           const response = current.responses.find(r => r.respondentId === id);
           const data = await api(current, { action: 'interviewBatch', respondent: compactProfile(respondent, 'interview'), questions, history: current.interviews[id] ?? [], survey: current.questionnaire.map(item => ({ question: item.text, answer: response?.answers[item.id] ?? '' })) });

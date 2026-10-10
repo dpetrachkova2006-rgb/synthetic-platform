@@ -10,9 +10,24 @@ export function getAIConfig() {
   };
 }
 export function getAIKey() { return getAIConfig().apiKey; }
-export function getAIModel(groqModel: string) {
-  const config = getAIConfig();
-  return config.provider === 'groq' ? groqModel : config.model;
+export function getAIModel(_legacyModel: string) {
+  void _legacyModel;
+  return getAIConfig().model;
+}
+export function supportsStrictJSON() {
+  const { provider, model } = getAIConfig();
+  return (provider === 'openrouter' && model.startsWith('nvidia/nemotron-3-super')) ||
+    (provider === 'groq' && ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'].includes(model));
+}
+type PatternSchema = { pattern?: string; properties?: Record<string, PatternSchema>; items?: PatternSchema };
+function invalidPatternWords(value: unknown, schema: PatternSchema): string[] {
+  if (typeof value === 'string' && schema.pattern) {
+    const pattern = new RegExp(schema.pattern);
+    return (value.match(/[A-Za-z]+(?:['-][A-Za-z]+)*/g) ?? []).filter(word => !pattern.test(word));
+  }
+  if (Array.isArray(value)) return value.flatMap(item => invalidPatternWords(item, schema.items ?? {}));
+  if (typeof value === 'object' && value !== null) return Object.entries(value).flatMap(([key, item]) => invalidPatternWords(item, schema.properties?.[key] ?? {}));
+  return [];
 }
 export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise<Response> {
   const config = getAIConfig();
@@ -21,6 +36,15 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise
   headers.set('Authorization', `Bearer ${config.apiKey}`);
   headers.set('Content-Type', 'application/json');
   const payload = JSON.parse(String(options.body));
+  payload.model = config.model;
+  if (config.provider === 'groq') {
+    if (config.model.startsWith('openai/gpt-oss-')) {
+      payload.reasoning_effort = 'low';
+      payload.include_reasoning = false;
+    } else if (config.model === 'qwen/qwen3.8-27b') {
+      payload.reasoning_effort = 'none';
+    }
+  }
   const limit = Number(process.env.AI_MAX_REQUEST_TOKENS || 60000);
   if (!Number.isFinite(limit) || limit < 2000) throw new Error('Некорректный серверный AI_MAX_REQUEST_TOKENS.');
   const estimatedInput = Math.ceil(JSON.stringify(payload.messages ?? []).length / 2);
@@ -47,7 +71,30 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise
     headers.set('HTTP-Referer', 'https://resilient-salamander-0ffc69.netlify.app');
     headers.set('X-OpenRouter-Title', 'Synthetic Respondents');
   }
-  const response = await fetch(config.url, { ...options, headers, body: JSON.stringify(payload), signal: options.signal || AbortSignal.timeout(55000) });
+  const signal = options.signal || AbortSignal.timeout(55000);
+  let response = await fetch(config.url, { ...options, headers, body: JSON.stringify(payload), signal });
+  if (config.provider === 'groq' && response.status === 400 && payload.response_format?.type === 'json_schema') {
+    const failure = await response.clone().json().catch(() => null);
+    if (failure?.error?.code === 'json_validate_failed' && typeof failure.error.failed_generation === 'string' && failure.error.failed_generation.length <= 40000) {
+      // One repair on the same model, with the same schema and cancellation deadline.
+      // Groq validates string patterns after generation, so even strict output may need a language repair.
+      let invalidWords: string[] = [];
+      try { invalidWords = [...new Set(invalidPatternWords(JSON.parse(failure.error.failed_generation), payload.response_format.json_schema?.schema ?? {}))].slice(0, 30); } catch { /* A malformed completion still gets one schema repair. */ }
+      payload.messages.push({ role: 'assistant', content: failure.error.failed_generation }, { role: 'user', content: 'Предыдущий JSON не прошёл проверку. Исправь его строго по той же схеме, сохрани вопросы, порядок, номера участников и факты. Все текстовые значения должны быть на русском. Английские аббревиатуры переведи: SMS — СМС, ID — номер, PIN — ПИН-код, CVV — код безопасности. Размер выборки пиши словами «число участников», без латинских n и N. Не вставляй служебные коды проекта и вопросы вида q1 в текст отчёта. ' + (invalidWords.length ? `Обязательно переведи или убери следующие недопустимые вставки: ${invalidWords.join(', ')}. ` : '') + 'Верни только исправленный JSON.' });
+      response = await fetch(config.url, { ...options, headers, body: JSON.stringify(payload), signal });
+    }
+  }
+  if (config.provider === 'groq' && !response.ok) {
+    const failure = await response.clone().json().catch(() => null);
+    const reason = typeof failure?.error?.message === 'string' ? failure.error.message : '';
+    const quotaMessage = /request too large/i.test(reason) ? 'Объём этого этапа превышает бесплатный лимит Groq. Сократите число участников или длину интервью. Полученные результаты сохранены.'
+      : /tokens per day|requests per day|\bTPD\b|\bRPD\b/i.test(reason) ? 'Исчерпан дневной бесплатный лимит Groq. Полученные результаты сохранены; продолжите после обновления лимита.'
+      : 'Достигнут бесплатный лимит Groq. Подождите немного и продолжите. Полученные результаты сохранены.';
+    const message = response.status === 401 ? 'Groq отклонил API-ключ. Проверьте серверные настройки.'
+      : response.status === 429 ? quotaMessage
+      : response.status === 404 ? 'Выбранная модель Groq недоступна. Проверьте серверные настройки.' : null;
+    if (message) return Response.json({ error: { message } }, { status: response.status, headers: response.headers.has('retry-after') ? { 'Retry-After': response.headers.get('retry-after')! } : undefined });
+  }
   if (config.provider === 'openrouter' && !response.ok) {
     let rateMessage = 'Исчерпан бесплатный лимит OpenRouter или модель временно перегружена. Сохранённые ответы доступны; повторите позже.';
     if (response.status === 429) {

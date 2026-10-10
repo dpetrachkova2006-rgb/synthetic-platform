@@ -35,9 +35,21 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
-## Free hosted generation (OpenRouter / Netlify)
+## Hosted generation (Groq / OpenRouter / Netlify)
 
-All seven generation API routes share `app/lib/aiProvider.ts`. To enable the prepared OpenRouter adapter, set **server-only** environment variables locally and in Netlify:
+The current deployment uses server-only Groq configuration:
+
+```dotenv
+AI_PROVIDER=groq
+GROQ_API_KEY=<your own key>
+GROQ_MODEL=openai/gpt-oss-120b
+```
+
+Create a key at https://console.groq.com/keys and choose the Free plan. Configure the same values in Netlify and deploy again. Every route uses the configured model, including older routes that previously referenced retired models. Questions, survey answers and interview batches use strict structured outputs on supported models. A schema rejection can trigger one repair request on the same Groq model; independent server validation still rejects foreign speech or invalid data. Report quotations are copied on the server from exact transcript excerpts chosen by reference. The browser saves Groq interviews one question at a time and respects short provider pauses; it never switches to a paid provider. Quotas apply to the whole account, and large studies can still exceed them. Check your actual account limits at https://console.groq.com/settings/limits.
+
+### OpenRouter configuration
+
+All generation API routes share `app/lib/aiProvider.ts`. To enable OpenRouter, set **server-only** environment variables locally and in Netlify:
 
 ```dotenv
 AI_PROVIDER=openrouter

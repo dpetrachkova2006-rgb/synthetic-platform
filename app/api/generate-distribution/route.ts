@@ -344,7 +344,7 @@ export async function POST(
 
       return NextResponse.json(
         {
-          error: typeof providerError === 'string' && providerError.includes('OpenRouter') ? providerError : 'Не удалось получить распределение мнений. Повторите позже.',
+          error: typeof providerError === 'string' && /OpenRouter|Groq/.test(providerError) ? providerError : 'Не удалось получить распределение мнений. Повторите позже.',
 
           distribution:
             FALLBACK_DISTRIBUTION,
