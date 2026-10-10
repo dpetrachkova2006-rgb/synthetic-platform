@@ -1,6 +1,6 @@
 'use client';
 
-import { compactProfile, estimateTokens, INTERVIEW_BATCH, surveyBatchSize } from '../lib/researchEconomy';
+import { compactProfile, estimateTokens, INTERVIEW_BATCH, nextGroqInterviewBatch, surveyBatchSize } from '../lib/researchEconomy';
 import { providerRetryDelay, waitForProvider } from '../lib/providerPause';
 import PDFReportButton from '../components/PDFReportButton';
 import ReportPreview from '../components/ReportPreview';
@@ -193,13 +193,16 @@ function StudyContent() {
         const respondent = current.population.find(p => p.id === id);
         if (!respondent || !current.selectedIds.includes(id)) throw new Error('Респондент не выбран из исходной выборки.');
         const pendingQuestions = guideQuestions(current.guide).filter(q => !current.interviews[id]?.some(t => t.question === q && t.answer.trim() && !answerLanguageIssue(t.answer,`${current.topic} ${current.question} ${q}`)));
-        for (let offset = 0; offset < pendingQuestions.length; offset += batchSize) {
-          const questions = pendingQuestions.slice(offset, offset + batchSize);
+        for (let offset = 0; offset < pendingQuestions.length;) {
           setBusy(`Участник ${current.selectedIds.indexOf(id) + 1} из ${current.selectedIds.length} · получаем ответы`);
           const response = current.responses.find(r => r.respondentId === id);
-          const data = await api(current, { action: 'interviewBatch', respondent: compactProfile(respondent, 'interview'), questions, history: current.interviews[id] ?? [], survey: current.questionnaire.map(item => ({ question: item.text, answer: response?.answers[item.id] ?? '' })) });
+          const context = { respondent: compactProfile(respondent, 'interview'), history: current.interviews[id] ?? [], survey: current.questionnaire.map(item => ({ question: item.text, answer: response?.answers[item.id] ?? '' })) };
+          const proposed = pendingQuestions.slice(offset, offset + batchSize);
+          const questions = status.provider === 'groq' ? nextGroqInterviewBatch(proposed, { topic: current.topic, question: current.question, ...context }, batchSize) : proposed;
+          const data = await api(current, { action: 'interviewBatch', ...context, questions });
           const replaced=(current.interviews[id]??[]).filter(t=>questions.includes(t.question));
           current = commit({ ...current, usage: currentStudy.current?.usage, report: '', themes:[], replacedInterviews:[...(current.replacedInterviews??[]),...replaced.map(t=>({...t,respondentId:id,replacedAt:new Date().toISOString()}))], interviews: { ...current.interviews, [id]: [...(current.interviews[id] ?? []).filter(t=>!questions.includes(t.question)), ...data.turns] } });
+          offset += questions.length;
           setBusy(`Интервью #${id}: ${current.interviews[id].length} / ${guideQuestions(current.guide).length}`);
         }
       }

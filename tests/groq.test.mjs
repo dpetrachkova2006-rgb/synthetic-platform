@@ -69,6 +69,73 @@ test('Groq quota errors identify the actual limit and expose only a safe retry t
   assert.equal(groqQuota('Rate limit reached', 'bad').retrySeconds, null);
 });
 
+test('optimized interviews retain all context, return ordered answers and reject incomplete pairs', async () => {
+  const original = { fetch: global.fetch, AI_PROVIDER: process.env.AI_PROVIDER, GROQ_API_KEY: process.env.GROQ_API_KEY };
+  process.env.AI_PROVIDER = 'groq'; process.env.GROQ_API_KEY = 'test-only';
+  const body = { researchId: 'preserve-history', topic: 'Покупки', question: 'Как выбираете доставку?', action: 'interviewBatch', respondent: { id: 1, name: 'Анна', city: 'Москва' }, questions: ['Почему?', 'Что изменить?'], history: [{ question: 'Как заказываете?', answer: 'Заказываю по телефону, потому что сайт мне неудобен.' }], survey: [{ question: 'Как часто?', answer: 'Раз в неделю' }] };
+  const snapshot = JSON.stringify(body);
+  let sent;
+  let turns = [{ question: body.questions[0], answer: 'Мне удобнее поговорить с оператором.' }, { question: body.questions[1], answer: 'Хочу проще выбирать время доставки.' }];
+  global.fetch = async (_, options) => { sent = JSON.parse(options.body); return Response.json({ choices: [{ message: { content: JSON.stringify({ turns }) } }] }); };
+  try {
+    const { GET } = load(root + '/app/api/ai-status/route.ts');
+    assert.equal((await (await GET()).json()).interviewBatchSize, 2);
+    const { POST } = load(root + '/app/api/study/route.ts');
+    const request = () => new Request('http://localhost/api', { method: 'POST', body: JSON.stringify(body) });
+    const response = await POST(request());
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).turns, turns);
+    const context = JSON.parse(sent.messages.at(-1).content);
+    assert.deepEqual(context.history, body.history);
+    assert.deepEqual(context.survey, body.survey);
+    assert.deepEqual(context.questions, body.questions);
+    assert.equal(context.respondent.id, 1);
+    assert.equal(Object.keys(context).at(-1), 'questions');
+    assert.equal(context.researchId, undefined);
+    assert.ok(sent.max_completion_tokens >= 2500 && sent.max_completion_tokens < 4000);
+    assert.equal(JSON.stringify(body), snapshot);
+    turns = turns.slice(0, 1);
+    assert.equal((await POST(request())).status, 502);
+  } finally {
+    global.fetch = original.fetch;
+    for (const name of ['AI_PROVIDER', 'GROQ_API_KEY']) if (original[name] === undefined) delete process.env[name]; else process.env[name] = original[name];
+  }
+});
+
+test('interview batches adapt to long histories without removing saved turns', () => {
+  const { nextGroqInterviewBatch } = load(root + '/app/lib/researchEconomy.ts');
+  const questions = ['Почему?', 'Что изменить?', 'Как выбираете?'];
+  const short = { history: [{ question: 'Что важно?', answer: 'Точность доставки.' }] };
+  assert.deepEqual(nextGroqInterviewBatch(questions, short), questions.slice(0, 2));
+  const long = { history: Array.from({ length: 8 }, (_, i) => ({ question: `Вопрос ${i}`, answer: 'Подробный ответ участника. '.repeat(50) })) };
+  const saved = JSON.stringify(long);
+  assert.deepEqual(nextGroqInterviewBatch(questions, long), questions.slice(0, 1));
+  assert.equal(JSON.stringify(long), saved);
+  assert.deepEqual(nextGroqInterviewBatch(questions.slice(2), short), [questions[2]]);
+});
+
+test('report analysis receives the complete answer once and still returns an exact verified quote', async () => {
+  const original = { fetch: global.fetch, AI_PROVIDER: process.env.AI_PROVIDER, GROQ_API_KEY: process.env.GROQ_API_KEY };
+  process.env.AI_PROVIDER = 'groq'; process.env.GROQ_API_KEY = 'test-only';
+  const answer = 'Мне важна точность доставки. Ещё я хочу выбирать удобное время. Цены тоже сравниваю. Но иногда выбираю магазин рядом.';
+  let sent;
+  global.fetch = async (_, options) => { sent = JSON.parse(options.body); return Response.json({ choices: [{ message: { content: JSON.stringify({ report: '', themes: [{ title: 'Точность доставки', interpretation: 'Участник ценит соблюдение времени доставки.', quotes: [{ quoteId: 1 }] }] }) } }] }); };
+  try {
+    const { POST } = load(root + '/app/api/study/route.ts');
+    const evidence = { type: 'qualitative', sample: { size: 1 }, interviewCoverage: { selected: 1, included: 1 }, interviews: [{ respondent: { id: 7, name: 'Анна' }, transcript: [{ question: 'Что важно?', answer }] }] };
+    const r = await POST(new Request('http://localhost/api', { method: 'POST', body: JSON.stringify({ researchId: 'quote-check', topic: 'Доставка', question: 'Что важно при выборе?', action: 'report', evidence }) }));
+    assert.equal(r.status, 200);
+    const input = JSON.parse(sent.messages.at(-1).content);
+    assert.equal(input.evidence.availableQuotes, undefined);
+    assert.equal(input.evidence.interviews[0].transcript[0].segments.map(s => s.text).join(''), answer);
+    const result = await r.json();
+    assert.deepEqual(result.themes[0].quotes, [{ respondentId: 7, question: 'Что важно?', quote: 'Мне важна точность доставки.' }]);
+  } finally {
+    global.fetch = original.fetch;
+    for (const name of ['AI_PROVIDER', 'GROQ_API_KEY']) if (original[name] === undefined) delete process.env[name]; else process.env[name] = original[name];
+  }
+});
+
 test('interview pause accepts a three-minute wait and remains cancellable', async () => {
   const { providerRetryDelay, waitForProvider } = load(root + '/app/lib/providerPause.ts');
   const limited = new Response(null, { status: 429, headers: { 'Retry-After': '194', 'X-AI-Quota': 'tokens-day' } });
@@ -102,13 +169,19 @@ test('study forwards the quota type and provider retry time without private deta
   }
 });
 test('report quote references preserve exact source excerpts and participant numbers', () => {
-  const { reportQuoteLibrary } = load(root + '/app/lib/reportQuotes.ts');
+  const { reportQuoteLibrary, reportTranscriptSegments } = load(root + '/app/lib/reportQuotes.ts');
   const source = 'Мне удобно. Но хотелось бы чаще ездить вечером. Это важный вопрос.';
   const quotes = reportQuoteLibrary([{ respondent: { id: 91 }, transcript: [{ question: 'Почему?', answer: source }] }]);
   assert.equal(quotes.length, 3);
   assert.deepEqual(quotes.map(q => q.quoteId), [1, 2, 3]);
   assert.ok(quotes.every(q => q.respondentId === 91 && q.question === 'Почему?' && source.includes(q.quote)));
   assert.deepEqual(reportQuoteLibrary([null, { transcript: [] }]), []);
+  const segments = reportTranscriptSegments(91, 'Почему?', source, quotes);
+  assert.equal(segments.map(s => s.text).join(''), source);
+  assert.deepEqual(segments.filter(s => s.quoteId).map(s => s.quoteId), [1, 2, 3]);
+  const long = 'Подробный ответ.\n\n' + 'Большое предложение без завершения '.repeat(40) + '. Последнее пояснение.';
+  const longQuotes = reportQuoteLibrary([{ respondent: { id: 7 }, transcript: [{ question: 'Что важно?', answer: long }] }]);
+  assert.equal(reportTranscriptSegments(7, 'Что важно?', long, longQuotes).map(s => s.text).join(''), long);
 });
 
 test('saved reports use counted statistics and never reuse fabricated model percentages', () => {
