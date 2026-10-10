@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     if (record(body.respondent)) body.respondent = compactProfile(body.respondent as Parameters<typeof compactProfile>[0], 'interview');
     const selectedModel = body.action === 'interviewBatch' || body.action === 'interview' ? getInterviewModel() : getAIModel('');
     // Include room for Russian answers, exact question text, JSON and model reasoning.
-    const outputLimit = body.action === 'report' ? (getAIConfig().provider === 'groq' ? 3200 : 6500) : body.action === 'interviewBatch' ? interviewOutputLimit(body.questions as string[], getAIConfig().provider === 'groq') : body.action === 'survey' ? Math.max(1200, Math.min(6000, 500 + (body.respondents as unknown[]).length * (body.questionnaire as {id:string;options:string[]}[]).reduce((n,q)=>n+estimateTokens(q.id)+Math.max(...q.options.map(estimateTokens))+25,20))) : 2000;
+    const outputLimit = body.action === 'report' ? (getAIConfig().provider === 'groq' ? 4000 : 6500) : body.action === 'interviewBatch' ? interviewOutputLimit(body.questions as string[], getAIConfig().provider === 'groq') : body.action === 'survey' ? Math.max(1200, Math.min(6000, 500 + (body.respondents as unknown[]).length * (body.questionnaire as {id:string;options:string[]}[]).reduce((n,q)=>n+estimateTokens(q.id)+Math.max(...q.options.map(estimateTokens))+25,20))) : 2000;
     if (estimateTokens(body) + outputLimit > Number(process.env.AI_MAX_REQUEST_TOKENS || 60000)) return NextResponse.json({ error: 'Слишком большой объём данных для одного запроса. Сократите вопросы или историю интервью.' }, { status: 413 });
     let responseFormat: Record<string, unknown> = { type: 'json_object' };
     if (body.action === 'survey' && supportsStrictJSON()) {
@@ -61,7 +61,23 @@ export async function POST(request: Request) {
       if(supportsStrictJSON(selectedModel)) {
         const prose={type:'string',minLength:1,maxLength:1200,pattern:russianAnswerPattern(`${body.topic} ${body.question}`).replace('[^A-Za-z]','[^A-Za-z0-9]')};
         const refs={type:'array',maxItems:3,items:{type:'integer',enum:quoteLibrary.length?quoteLibrary.map(q=>q.quoteId):[0]}};
-        responseFormat={type:'json_schema',json_schema:{name:'research_analysis',strict:true,schema:{type:'object',properties:{report:{type:'string',maxLength:0},themes:{type:'array',maxItems:quoteLibrary.length?3:0,items:{type:'object',properties:{title:prose,interpretation:prose,quotes:{type:'array',minItems:1,maxItems:3,items:{type:'object',properties:{quoteId:refs.items},required:['quoteId'],additionalProperties:false}}},required:['title','interpretation','quotes'],additionalProperties:false}},insights:{type:'array',minItems:1,maxItems:5,items:{type:'object',properties:{title:{...prose,maxLength:160},finding:prose,explanation:prose,nextStep:prose,factIds:{type:'array',maxItems:3,items:{type:'string',enum:facts.length?facts.map(f=>f.id):['none']}},quoteIds:refs},required:['title','finding','explanation','nextStep','factIds','quoteIds'],additionalProperties:false}}},required:['report','themes','insights'],additionalProperties:false}}};
+        responseFormat = { type: 'json_schema', json_schema: { name: 'research_analysis', strict: true, schema: {
+          type: 'object', properties: {
+            report: { type: 'string', maxLength: 0 },
+            themes: { type: 'array', maxItems: quoteLibrary.length ? 3 : 0, items: { type: 'object', properties: {
+              title: {...prose,maxLength:160}, interpretation: prose,
+              quotes: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'object', properties: { quoteId: refs.items }, required: ['quoteId'], additionalProperties: false } }
+            }, required: ['title','interpretation','quotes'], additionalProperties: false } },
+            insights: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'object', properties: {
+              title: { ...prose, maxLength: 160 }, finding: prose, explanation: prose, nextStep: prose,
+              factIds: { type: 'array', maxItems: 3, items: { type: 'string', enum: facts.length ? facts.map(f=>f.id) : ['none'] } }, quoteIds: refs
+            }, required: ['title','finding','explanation','nextStep','factIds','quoteIds'], additionalProperties: false } },
+            commentary: { type: 'object', properties: {
+              overview: { ...prose, maxLength: 1800 }, interpretation: { ...prose, maxLength: 1800 }, implications: { ...prose, maxLength: 1800 },
+              insightIndexes: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'integer', minimum: 0, maximum: 4 } }
+            }, required: ['overview','interpretation','implications','insightIndexes'], additionalProperties: false }
+          }, required: ['report','themes','insights','commentary'], additionalProperties: false
+        } } };
       }
     }
     const apiKey = getAIKey();
@@ -129,6 +145,10 @@ export async function POST(request: Request) {
           if(sources.some(f=>!f)||quotes.some(q=>!q))throw new Error('Не удалось проверить основания вывода. Повторите анализ.');
           return {...i,facts:sources,quotes:quotes.map(q=>({respondentId:q!.respondentId,question:q!.question,quote:q!.quote}))};
         });
+      }
+      if(result.commentary!==undefined){
+        const c=result.commentary;
+        if(!record(c)||!['overview','interpretation','implications'].every(k=>text(c[k],1800)&&!/[\d%％]/.test(String(c[k]))&&!answerLanguageIssue(String(c[k]),languageContext))||!Array.isArray(c.insightIndexes)||!c.insightIndexes.length||c.insightIndexes.length>5||!c.insightIndexes.every(i=>Number.isInteger(i)&&Number(i)>=0&&Number(i)<(result.insights as unknown[]).length))throw new Error('Комментарий содержит непроверяемый вывод или текст на другом языке. Повторите анализ.');
       }
       result.report = verifiedReportText(body.evidence as ReportEvidence, result.themes as { title: string; interpretation: string }[]) + (Array.isArray(result.insights)?'\n\n'+result.insights.map(i=>[i.title,i.finding,i.explanation,i.nextStep].join('\n')).join('\n\n'):'');
     }

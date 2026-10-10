@@ -36,3 +36,27 @@ test('analysis rejects fake references, statistics, English prose and empty unsu
   respond([]);assert.equal((await api.POST(request())).status,502);
  }finally{global.fetch=original.fetch;for(const [k,v] of [['AI_PROVIDER',original.provider],['GROQ_API_KEY',original.key]])if(v===undefined)delete process.env[k];else process.env[k]=v;}
 });
+test('commentary reuses saved explanations, respects changes and rejects invalid synthesis',async()=>{
+ const fact=analysis.comparisonFacts(project).find(f=>f.id===insight.factIds[0]);
+ const saved={...project,report:'Анализ',analysisSignature:analysis.analysisSignature(project,[]),analysisInsights:[{...insight,facts:[fact],quotes:[]}]};
+ const fallback=analysis.commentaryFromInsights(saved,[]);assert.equal(fallback[0].paragraphs[0],insight.explanation);assert.equal(fallback.at(-1).paragraphs[0],insight.nextStep);assert.deepEqual(analysis.commentaryFromInsights({...saved,topic:'Другая тема'},[]),[]);
+ const commentary={overview:'Оценка автобуса связана с выбором приоритета поездки.',interpretation:'Сопоставление выявляет связь ответов, но причины требуют отдельного изучения.',implications:'Следующий шаг — уточнить роль пересадок и сравнить разные маршруты.',insightIndexes:[0]};
+ assert.equal(analysis.commentaryFromInsights({...saved,analysisCommentary:commentary},[])[0].paragraphs[0],commentary.overview);
+ const original={fetch:global.fetch,provider:process.env.AI_PROVIDER,key:process.env.GROQ_API_KEY};process.env.AI_PROVIDER='groq';process.env.GROQ_API_KEY='test-only';let sent;
+ const body={researchId:project.researchId,topic:project.topic,question:project.question,action:'report',evidence:study.buildReportEvidence(project)};
+ const request=()=>new Request('http://localhost/api/study',{method:'POST',body:JSON.stringify(body)});
+ const respond=c=>global.fetch=async(_,options)=>{sent=JSON.parse(options.body);return Response.json({choices:[{message:{content:JSON.stringify({report:'',themes:[],insights:[insight],commentary:c})}}]});};
+ try{
+  respond(commentary);const r=await api.POST(request());assert.equal(r.status,200);assert.deepEqual((await r.json()).commentary,commentary);const schema=sent.response_format.json_schema.schema;assert.ok(schema.required.includes('commentary'));assert.ok(schema.properties.commentary.properties.overview);
+  for(const c of [{...commentary,overview:'Все довольны на 99%'},{...commentary,interpretation:'This is a conclusion.'},{...commentary,insightIndexes:[1]},{...commentary,insightIndexes:[]},{...commentary,implications:''}]){respond(c);assert.equal((await api.POST(request())).status,502);}
+ }finally{global.fetch=original.fetch;for(const [k,v] of [['AI_PROVIDER',original.provider],['GROQ_API_KEY',original.key]])if(v===undefined)delete process.env[k];else process.env[k]=v;}
+});
+test('older survey and theme reports get visible commentary without invented causes',()=>{
+ const {reportCommentary}=load(root+'/app/lib/reportCommentary.ts');
+ const comments=reportCommentary(project);assert.match(comments[0].paragraphs[0],/2 из 3/);assert.match(comments[0].paragraphs[1],/преобладающий вариант/);
+ const split={...project,responses:project.responses.slice(0,2)};assert.match(reportCommentary(split)[0].paragraphs[0],/нет единственного лидера/);
+ const allSame={...project,responses:[project.responses[0]]};assert.match(reportCommentary(allSame)[0].paragraphs[1],/ответы совпали/);
+ const qualitative={...project,type:'qualitative',selectedIds:[1],guide:'Почему?',interviews:{1:[{question:'Почему?',answer:'Мне важны прямые маршруты.'}]},themes:[{title:'Пересадки',interpretation:'Прямой маршрут уменьшает сложность поездки в описанном случае.',quotes:[{respondentId:1,question:'Почему?',quote:'Мне важны прямые маршруты.'}]}]};
+ assert.equal(reportCommentary(qualitative)[0].paragraphs[0],qualitative.themes[0].interpretation);assert.match(reportCommentary(qualitative)[0].paragraphs[1],/Мне важны прямые маршруты/);
+ assert.deepEqual(reportCommentary({...qualitative,themes:[{...qualitative.themes[0],quotes:[{respondentId:1,question:'Почему?',quote:'Выдуманная цитата'}]}]}),[]);
+});

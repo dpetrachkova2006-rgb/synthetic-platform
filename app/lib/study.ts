@@ -1,4 +1,4 @@
-import { comparisonFacts, type ResearchInsight } from "./reportInsights";
+import { comparisonFacts, type ResearchInsight, type AnalysisCommentary } from "./reportInsights";
 import { compactProfile } from "./researchEconomy";
 import { answerLanguageIssue } from './respondentLanguage';
 import type { SyntheticRespondent } from './syntheticGenerator';
@@ -9,6 +9,7 @@ export type SurveyResponse = { respondentId: number; answers: Record<string, str
 export type InterviewTurn = { question: string; answer: string };
 export type Study = {
   workflow?: 'survey';
+  analysisCommentary?: AnalysisCommentary;
   analysisInsights?: ResearchInsight[]; analysisSignature?: string;
   replacedInterviews?: {respondentId:number; question:string; answer:string; replacedAt:string}[];
   themes?: { title: string; interpretation: string; quotes: { respondentId: number; question: string; quote: string }[] }[];
