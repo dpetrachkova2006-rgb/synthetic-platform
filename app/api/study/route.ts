@@ -80,7 +80,9 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const failure = await response.json().catch(() => null);
       const safeError = failure?.error?.message;
-      return NextResponse.json({ error: typeof safeError === 'string' && /OpenRouter|Groq/.test(safeError) ? safeError : response.status === 429 ? 'Достигнут лимит сервиса генерации. Сохранённые ответы доступны; повторите позже.' : 'Сервис генерации недоступен. Повторите попытку.' }, { status: response.status === 429 ? 429 : 502, headers: response.headers.has('retry-after') ? { 'Retry-After': response.headers.get('retry-after')! } : undefined });
+      const quotaHeaders = new Headers();
+      for (const name of ['Retry-After', 'X-AI-Quota']) if (response.headers.has(name)) quotaHeaders.set(name, response.headers.get(name)!);
+      return NextResponse.json({ error: typeof safeError === 'string' && /OpenRouter|Groq/.test(safeError) ? safeError : response.status === 429 ? 'Достигнут лимит сервиса генерации. Сохранённые ответы доступны; повторите позже.' : 'Сервис генерации недоступен. Повторите попытку.' }, { status: response.status === 429 ? 429 : 502, headers: quotaHeaders });
     }
     const completion = await response.json();
     let result: unknown;

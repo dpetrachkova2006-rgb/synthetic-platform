@@ -47,11 +47,58 @@ test('Groq uses the configured current model, strict interviews and safe quota e
     assert.equal(sent.model, 'openai/gpt-oss-120b');
     global.fetch = async () => Response.json({ error: { message: 'Private organization detail' } }, { status: 429, headers: { 'Retry-After': '2.5' } });
     const limited = await provider.aiFetch('', { body: '{}' });
-    assert.equal(limited.headers.get('retry-after'), '2.5');
+    assert.equal(limited.headers.get('retry-after'), '3');
     assert.doesNotMatch((await limited.json()).error.message, /Private/);
   } finally {
     global.fetch = original.fetch;
     for (const name of ['AI_PROVIDER', 'GROQ_API_KEY', 'GROQ_MODEL']) { if (original[name] === undefined) delete process.env[name]; else process.env[name] = original[name]; }
+  }
+});
+
+test('Groq quota errors identify the actual limit and expose only a safe retry time', () => {
+  const { groqQuota } = load(root + '/app/lib/groqQuota.ts');
+  const daily = groqQuota('Rate limit reached for model in organization org_private on tokens per day (TPD): Limit 200000, Used 199700, Requested 800. Please try again in 3m14s.', null);
+  assert.equal(daily.kind, 'tokens-day');
+  assert.equal(daily.retrySeconds, 194);
+  assert.match(daily.message, /объём текста.*недостаточно/);
+  assert.match(daily.message, /4 мин/);
+  assert.doesNotMatch(daily.message, /org_private|199700|Исчерпан/);
+  assert.equal(groqQuota('on tokens per minute (TPM); TPD quota still available', '8').kind, 'tokens-minute');
+  assert.equal(groqQuota('on requests per day (RPD)', '3600').kind, 'requests-day');
+  assert.equal(groqQuota('Request too large for tokens per day (TPD)', '15').kind, 'request-size');
+  assert.equal(groqQuota('Rate limit reached', 'bad').retrySeconds, null);
+});
+
+test('interview pause accepts a three-minute wait and remains cancellable', async () => {
+  const { providerRetryDelay, waitForProvider } = load(root + '/app/lib/providerPause.ts');
+  const limited = new Response(null, { status: 429, headers: { 'Retry-After': '194', 'X-AI-Quota': 'tokens-day' } });
+  assert.equal(providerRetryDelay(limited), 194);
+  assert.equal(providerRetryDelay(new Response(null, { status: 429, headers: { 'Retry-After': '901' } })), null);
+  assert.equal(providerRetryDelay(new Response(null, { status: 429, headers: { 'Retry-After': '10', 'X-AI-Quota': 'request-size' } })), null);
+  const controller = new AbortController();
+  let remaining = 0;
+  const pause = waitForProvider(194, controller.signal, seconds => { remaining = seconds; });
+  const cancelled = assert.rejects(pause, { name: 'AbortError' });
+  assert.ok(remaining >= 194 && remaining <= 195);
+  controller.abort();
+  await cancelled;
+  await assert.rejects(waitForProvider(194, controller.signal, () => assert.fail('Aborted pause must not start')), { name: 'AbortError' });
+});
+
+test('study forwards the quota type and provider retry time without private details', async () => {
+  const original = { fetch: global.fetch, AI_PROVIDER: process.env.AI_PROVIDER, GROQ_API_KEY: process.env.GROQ_API_KEY };
+  process.env.AI_PROVIDER = 'groq'; process.env.GROQ_API_KEY = 'test-only';
+  global.fetch = async () => Response.json({ error: { message: 'Rate limit reached in organization org_private on tokens per day (TPD). Please try again in 3m14s.' } }, { status: 429 });
+  try {
+    const { POST } = load(root + '/app/api/study/route.ts');
+    const response = await POST(new Request('http://localhost/api', { method: 'POST', body: JSON.stringify({ researchId: 'resume', topic: 'Оплата', question: 'Как удобно платить?', action: 'interviewBatch', respondent: { id: 1, name: 'Анна' }, questions: ['Почему?'], history: [{ question: 'Как платите?', answer: 'Пользуюсь картой.' }], survey: [] }) }));
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('X-AI-Quota'), 'tokens-day');
+    assert.equal(response.headers.get('Retry-After'), '194');
+    assert.doesNotMatch((await response.json()).error, /org_private/);
+  } finally {
+    global.fetch = original.fetch;
+    for (const name of ['AI_PROVIDER', 'GROQ_API_KEY']) if (original[name] === undefined) delete process.env[name]; else process.env[name] = original[name];
   }
 });
 test('report quote references preserve exact source excerpts and participant numbers', () => {

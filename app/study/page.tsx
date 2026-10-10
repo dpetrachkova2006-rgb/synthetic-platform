@@ -1,6 +1,7 @@
 'use client';
 
 import { compactProfile, estimateTokens, INTERVIEW_BATCH, surveyBatchSize } from '../lib/researchEconomy';
+import { providerRetryDelay, waitForProvider } from '../lib/providerPause';
 import PDFReportButton from '../components/PDFReportButton';
 import ReportPreview from '../components/ReportPreview';
 import StageChecklist from '../components/StageChecklist';
@@ -132,16 +133,12 @@ function StudyContent() {
     const options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.current?.signal, body: JSON.stringify({ researchId: current.researchId, topic: current.topic, question: current.question, ...payload }) };
     let response = await fetch('/api/study', options);
     for (let retry = 0; retry < 3 && response.status === 429; retry++) {
-      const delay = Number(response.headers.get('Retry-After'));
-      // Retry only a short, explicit provider pause; daily quotas and oversized requests need attention.
-      if (!Number.isFinite(delay) || delay <= 0 || delay > 90) break;
-      setBusy('Короткая пауза перед следующим ответом…');
-      await new Promise<void>((resolve, reject) => {
-        const signal = controller.current?.signal;
-        const abort = () => { window.clearTimeout(timer); reject(new DOMException('Отменено', 'AbortError')); };
-        const timer = window.setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, Math.ceil(delay * 1000) + 500);
-        signal?.addEventListener('abort', abort, { once: true });
-        if (signal?.aborted) abort();
+      const delay = providerRetryDelay(response);
+      if (delay === null) break;
+      const daily = /-day$/.test(response.headers.get('X-AI-Quota') ?? '');
+      await waitForProvider(delay, controller.current?.signal, remaining => {
+        const clock = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`;
+        setBusy(`${daily ? 'Groq восстанавливает дневную квоту' : 'Пауза Groq'} · ${clock}. Продолжим автоматически.`);
       });
       response = await fetch('/api/study', options);
       setBusy('Продолжаем исследование…');

@@ -1,3 +1,5 @@
+import { groqQuota } from './groqQuota';
+
 /** Server-side provider selection. Keys must never be imported into client components. */
 export function getAIConfig() {
   const provider = process.env.AI_PROVIDER || (process.env.OPENROUTER_API_KEY ? 'openrouter' : process.env.XAI_API_KEY ? 'xai' : 'groq');
@@ -87,13 +89,18 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise
   if (config.provider === 'groq' && !response.ok) {
     const failure = await response.clone().json().catch(() => null);
     const reason = typeof failure?.error?.message === 'string' ? failure.error.message : '';
-    const quotaMessage = /request too large/i.test(reason) ? 'Объём этого этапа превышает бесплатный лимит Groq. Сократите число участников или длину интервью. Полученные результаты сохранены.'
-      : /tokens per day|requests per day|\bTPD\b|\bRPD\b/i.test(reason) ? 'Исчерпан дневной бесплатный лимит Groq. Полученные результаты сохранены; продолжите после обновления лимита.'
-      : 'Достигнут бесплатный лимит Groq. Подождите немного и продолжите. Полученные результаты сохранены.';
+    const quota = groqQuota(reason, response.headers.get('retry-after'));
     const message = response.status === 401 ? 'Groq отклонил API-ключ. Проверьте серверные настройки.'
-      : response.status === 429 ? quotaMessage
+      : response.status === 429 ? quota.message
       : response.status === 404 ? 'Выбранная модель Groq недоступна. Проверьте серверные настройки.' : null;
-    if (message) return Response.json({ error: { message } }, { status: response.status, headers: response.headers.has('retry-after') ? { 'Retry-After': response.headers.get('retry-after')! } : undefined });
+    if (message) {
+      const safeHeaders = new Headers();
+      if (response.status === 429) {
+        safeHeaders.set('X-AI-Quota', quota.kind);
+        if (quota.retrySeconds) safeHeaders.set('Retry-After', String(quota.retrySeconds));
+      }
+      return Response.json({ error: { message } }, { status: response.status, headers: safeHeaders });
+    }
   }
   if (config.provider === 'openrouter' && !response.ok) {
     let rateMessage = 'Исчерпан бесплатный лимит OpenRouter или модель временно перегружена. Сохранённые ответы доступны; повторите позже.';
