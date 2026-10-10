@@ -11,11 +11,11 @@ type Props = {
   study: Study; busy: string; error: string; activeId: number | null;
   onGuide: (text: string) => void; onError: (text: string) => void;
   onQuestions: (questions: QuestionDraft[]) => void;
-  questionsBusy: boolean; onQuestionsBusy: (busy: boolean) => void;
+  questionsBusy: boolean; questionsPending: boolean; onQuestionsBusy: (busy: boolean) => void; onQuestionsPending: (pending: boolean) => void;
   onRun: () => void; onCancel: () => void; onReport: () => void; onView: (id: number) => void;
 };
 
-export default function InterviewStage({ study, busy, error, activeId, onGuide, onQuestions, questionsBusy, onQuestionsBusy, onError, onRun, onCancel, onReport, onView }: Props) {
+export default function InterviewStage({ study, busy, error, activeId, onGuide, onQuestions, questionsBusy, questionsPending, onQuestionsBusy, onQuestionsPending, onError, onRun, onCancel, onReport, onView }: Props) {
   const questions = guideQuestions(study.guide);
   const completed = completedInterviewIds(study);
   const finished = study.selectedIds.length > 0 && completed.length === study.selectedIds.length;
@@ -41,7 +41,7 @@ export default function InterviewStage({ study, busy, error, activeId, onGuide, 
     <div className="grid items-start gap-5 lg:grid-cols-[1.2fr_1fr]"><section className="interview-panel">
       <h3 className="flex items-center gap-3 font-bold"><span className="interview-step">1</span>Вопросы для участников</h3>
       {started ? <details className="mt-4"><summary className="cursor-pointer text-sm font-semibold text-blue-700">Посмотреть вопросы · {questions.length}</summary><ol className="mt-4 list-inside list-decimal space-y-3 text-sm leading-6">{questions.map(q => <li key={q}>{q}</li>)}</ol></details> : <>
-        <div className="mt-4"><QuestionGenerator key={study.researchId} projectId={study.researchId} mode="interview" topic={study.topic} brief={study.question} existing={questions} surveyQuestions={study.questionnaire.map(q=>q.text)} disabled={!!busy} onApply={onQuestions} onBusyChange={onQuestionsBusy}/></div>
+        <div className="mt-4"><QuestionGenerator key={study.researchId} projectId={study.researchId} mode="interview" topic={study.topic} brief={study.question} existing={questions} surveyQuestions={study.questionnaire.map(q=>q.text)} disabled={!!busy} onApply={onQuestions} onBusyChange={onQuestionsBusy} onPendingChange={onQuestionsPending}/></div>
         <label htmlFor="interview-guide" className="mt-4 block text-sm text-gray-600">Один вопрос на строку</label>
         <textarea id="interview-guide" className="app-input mt-2 min-h-32" value={study.guide} disabled={!!busy} placeholder={'Что для вас важно при выборе?\nС какими сложностями вы сталкиваетесь?\nЧто вы хотели бы изменить?'} onChange={e => onGuide(e.target.value)}/>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs"><span className="text-gray-500">{questions.length} / 30 вопросов</span><details><summary className="cursor-pointer font-semibold text-blue-700">Загрузить вопросы из файла</summary><input aria-label="Файл с вопросами интервью" className="mt-3 max-w-full text-sm" type="file" accept=".txt,text/plain" disabled={!!busy} onChange={async e => {
@@ -52,7 +52,7 @@ export default function InterviewStage({ study, busy, error, activeId, onGuide, 
     <section id="interview-actions" className="interview-panel interview-panel--action">
       <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="flex items-center gap-3 font-bold"><span className="interview-step">{finished?<Check size={16}/>:2}</span>{finished?'Интервью готовы':'Получите ответы'}</h3><span className="text-sm text-gray-600">Завершено: {completed.length} / {study.selectedIds.length}</span></div>
       {busy ? <div className="mt-5"><p role="status" aria-live="polite" className="flex items-center gap-3 text-sm font-semibold text-blue-800"><LoaderCircle size={18} className="shrink-0 animate-spin"/>{busy}</p><div role="progressbar" aria-label="Полученные ответы" aria-valuemin={0} aria-valuemax={total || 1} aria-valuenow={answerCount} className="mt-4 h-2 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600 transition-all" style={{width:`${total ? answerCount / total * 100 : 0}%`}}/></div><div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs"><span className="text-gray-600">Ответы сохраняются автоматически. Можно остановить и продолжить.</span><button type="button" className="font-bold text-blue-700 underline" onClick={onCancel}>Остановить</button></div></div> : <div className="mt-5 flex flex-wrap items-center gap-4">
-        <button type="button" className="app-button inline-flex min-h-12 items-center justify-center gap-3 px-6" disabled={questionsBusy || !study.selectedIds.length} onClick={finished?onReport:start}>{finished?'Перейти к отчёту':started?'Продолжить интервью':'Начать интервью'}<ArrowRight size={18}/></button>
+        <button type="button" className="app-button inline-flex min-h-12 items-center justify-center gap-3 px-6" disabled={questionsBusy || questionsPending || !study.selectedIds.length} onClick={finished?onReport:start}>{finished?'Перейти к отчёту':started?'Продолжить интервью':'Начать интервью'}<ArrowRight size={18}/></button>
         <p className="max-w-sm text-xs leading-5 text-gray-600">{finished?(study.type==='mixed'?'В отчёте будут опрос, цитаты и результаты интервью.':'В отчёте будут цитаты и результаты интервью.'):started?'Будут получены только недостающие ответы.':'Интервью пройдут по очереди со всеми выбранными участниками.'}</p>
       </div>}
       {error&&<p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800">{error}</p>}

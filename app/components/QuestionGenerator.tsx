@@ -4,9 +4,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowRight, LoaderCircle, Sparkles, X } from 'lucide-react';
 import { validateQuestionDrafts, type QuestionDraft, type QuestionMode } from '../lib/questionDrafts';
 
-type Props = { projectId: string; mode: QuestionMode; topic: string; brief: string; existing: string[]; surveyQuestions?: string[]; disabled?: boolean; onApply: (questions: QuestionDraft[]) => void; onBusyChange: (busy: boolean) => void };
+type Props = { projectId: string; mode: QuestionMode; topic: string; brief: string; existing: string[]; surveyQuestions?: string[]; disabled?: boolean; onApply: (questions: QuestionDraft[]) => void; onBusyChange: (busy: boolean) => void; onPendingChange: (pending: boolean) => void };
 
-export default function QuestionGenerator({ projectId, mode, topic: initialTopic, brief: initialBrief, existing, surveyQuestions = [], disabled, onApply, onBusyChange }: Props) {
+export default function QuestionGenerator({ projectId, mode, topic: initialTopic, brief: initialBrief, existing, surveyQuestions = [], disabled, onApply, onBusyChange, onPendingChange }: Props) {
   const id = useId();
   const storageKey = `question_assistant_v1_${projectId}_${mode}`;
   const [open, setOpen] = useState(false);
@@ -23,8 +23,10 @@ export default function QuestionGenerator({ projectId, mode, topic: initialTopic
   const preview = useRef<HTMLDivElement | null>(null);
   const maxCount = Math.min(10, Math.max(0, (mode === 'survey' ? 10 : 30) - existing.length));
   // A preview must be applied or dismissed before the research can start.
-  useEffect(() => { onBusyChange(busy || questions.length > 0); }, [busy, questions.length, onBusyChange]);
+  useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
+  useEffect(() => { onPendingChange(questions.length > 0); }, [questions.length, onPendingChange]);
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
+  useEffect(() => () => onPendingChange(false), [onPendingChange]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

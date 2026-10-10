@@ -41,6 +41,7 @@ function StudyContent() {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [busy, setBusy] = useState('');
   const [questionsBusy, setQuestionsBusy] = useState(false);
+  const [questionsPending, setQuestionsPending] = useState(false);
   const [error, setError] = useState('');
   const [projects, setProjects] = useState<Study[]>([]);
   const lock = useRef(false);
@@ -241,7 +242,7 @@ function StudyContent() {
             </div><button className={button} disabled={questionsBusy || !Number.isInteger(size) || size < 1 || size > 500} onClick={generate}>Сформировать выборку</button></> : <p className="app-badge">Выборка готова · {study.population.length} участников</p>}
             {study.type !== 'qualitative' && <>
               <p id="questionnaire-editor" className="text-gray-700">Добавьте вопросы и варианты ответа. После запуска опроса их нельзя изменить.</p>
-              {!study.responses.length && <QuestionGenerator key={study.researchId} projectId={study.researchId} mode="survey" topic={study.topic} brief={study.question} existing={study.questionnaire.map(q=>q.text)} disabled={!!busy} onApply={questions=>applyQuestions('survey',questions)} onBusyChange={setQuestionsBusy}/> }
+              {!study.responses.length && <QuestionGenerator key={study.researchId} projectId={study.researchId} mode="survey" topic={study.topic} brief={study.question} existing={study.questionnaire.map(q=>q.text)} disabled={!!busy} onApply={questions=>applyQuestions('survey',questions)} onBusyChange={setQuestionsBusy} onPendingChange={setQuestionsPending}/> }
               {study.questionnaire.map((q, index) => <div className="editorial-card p-5" key={q.id}>
                 <label>Вопрос {index + 1}<input className={field} maxLength={1000} disabled={study.responses.length > 0} value={q.text} onChange={e => update({ questionnaire: study.questionnaire.map(item => item.id === q.id ? { ...item, text: e.target.value } : item) })} /></label>
                 <label className="mt-4 block">Варианты ответа (разделитель — точка с запятой)<input className={field} disabled={study.responses.length > 0} value={q.options.join(';')} onChange={e => update({ questionnaire: study.questionnaire.map(item => item.id === q.id ? { ...item, options: e.target.value.split(';') } : item) })} /></label>
@@ -249,7 +250,7 @@ function StudyContent() {
               </div>)}
               <div id="survey-actions" className="flex flex-wrap gap-3">
                 <button className="app-button-secondary min-h-12 px-5" disabled={study.responses.length > 0 || study.questionnaire.length >= 10} onClick={() => update({ questionnaire: [...study.questionnaire, { id: crypto.randomUUID(), text: '', options: ['Да', 'Нет', 'Затрудняюсь ответить'] }] })}>Добавить вопрос</button>
-                <button className={button} disabled={questionsBusy || !study.population.length || !validQuestionnaire || surveyComplete(study)} onClick={survey}>{study.responses.length ? 'Продолжить моделирование' : 'Запустить моделирование ответов'}</button>
+                <button className={button} disabled={questionsBusy || questionsPending || !study.population.length || !validQuestionnaire || surveyComplete(study)} onClick={survey}>{study.responses.length ? 'Продолжить моделирование' : 'Запустить моделирование ответов'}</button>
               </div>
               <p>Получено ответов: {study.responses.length} / {study.population.length}</p>
               {!!study.responses.length && <Quantitative study={study} />}
@@ -283,7 +284,7 @@ function StudyContent() {
             <label className="block">Почему выбрали этих участников?<textarea id="selection-reason" className={field} placeholder="Например: выбраны участники разного возраста с противоположными ответами на анкету." maxLength={6000} value={study.selectionReason} onChange={e => update({ selectionReason: e.target.value, report: '' })} /></label>
             <button className={button} onClick={() => { setActiveId(study.selectedIds[0]??null); goToStage(2); }}>Перейти к глубинным интервью</button>
           </div>}
-          {study.stage === 2 && <InterviewStage study={study} busy={busy} error={error} activeId={activeId} onGuide={guide=>update({guide,report:''})} onQuestions={questions=>applyQuestions('interview',questions)} questionsBusy={questionsBusy} onQuestionsBusy={setQuestionsBusy} onError={setError} onRun={()=>interview(true)} onCancel={()=>controller.current?.abort()} onReport={()=>goToStage(3)} onView={setActiveId}/>}
+          {study.stage === 2 && <InterviewStage study={study} busy={busy} error={error} activeId={activeId} onGuide={guide=>update({guide,report:''})} onQuestions={questions=>applyQuestions('interview',questions)} questionsBusy={questionsBusy} questionsPending={questionsPending} onQuestionsBusy={setQuestionsBusy} onQuestionsPending={setQuestionsPending} onError={setError} onRun={()=>interview(true)} onCancel={()=>controller.current?.abort()} onReport={()=>goToStage(3)} onView={setActiveId}/>}
           {study.stage === 3 && <div className="space-y-6">
             <h2 className="text-2xl font-black">Единый аналитический отчёт</h2>
             <p>Исходная выборка: {study.population.length}.{study.type !== 'quantitative' && ` Участников интервью: ${study.selectedIds.length}.`}</p>{study.selectionReason && <p className="whitespace-pre-wrap">Принципы отбора: {study.selectionReason}</p>}
