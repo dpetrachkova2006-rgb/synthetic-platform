@@ -19,20 +19,22 @@ export function stageChecks(s:Study,stage:number):FlowCheck[] {
   const finished=completedInterviewIds(s).length;
   const interviews={label:`Завершить интервью: ${finished} из ${s.selectedIds.length}`,done:interviewsComplete(s),help:guideValid(s)?'Нажмите «Начать интервью» или «Продолжить интервью».':'Добавьте вопросы, затем нажмите «Начать интервью».',target:'interview-actions',stage:2};
   if(stage===0)return s.type==='qualitative'?[population]:[population,{label:'Подготовить анкету',done:questionnaireValid(s),help:'Добавьте вопрос и минимум два разных непустых варианта ответа.',target:'questionnaire-editor',stage:0},{label:`Получить ответы: ${s.responses.length} из ${s.population.length}`,done:surveyComplete(s),help:'После создания выборки и анкеты нажмите «Запустить моделирование ответов».',target:'survey-actions',stage:0}];
+  if(s.type==='quantitative')return stageChecks(s,0);
   if(stage===1)return [selection,reason];
   if(stage===2)return [guide,interviews];
   return [population,...(s.type==='mixed'?[{label:'Завершить опрос',done:surveyComplete(s),help:'Продолжите моделирование ответов на первом этапе.',target:'survey-actions',stage:0}]:[]),selection,guide,interviews];
 }
 export function stageAccess(s:Study,stage:number):FlowCheck|null {
   if(stage===0)return null;
-  return [...stageChecks(s,0),...(stage>=2?stageChecks(s,1):[])].find(check=>!check.done)??null;
+  return [...stageChecks(s,0),...(stage>=2&&s.type!=='quantitative'?stageChecks(s,1):[])].find(check=>!check.done)??null;
 }
 export function reportIncludedIds(s:Study) {
-  return s.type==='quantitative'?s.population.filter(p=>p.answer?.trim()&&!answerLanguageIssue(p.answer,`${s.topic} ${s.question}`)).map(p=>p.id):s.reportRespondentIds??s.selectedIds;
+  return s.type==='quantitative'?(s.workflow==='survey'?s.responses.map(r=>r.respondentId):s.population.filter(p=>p.answer?.trim()&&!answerLanguageIssue(p.answer,`${s.topic} ${s.question}`)).map(p=>p.id)):s.reportRespondentIds??s.selectedIds;
 }
 export function reportBlocker(s:Study):string|null {
   if(!s.population.length)return 'Сначала сформируйте выборку.';
   if(s.type==='quantitative') {
+    if(s.workflow==='survey')return surveyComplete(s)?null:'Завершите количественную анкету, чтобы открыть итоговый отчёт.';
     const answers=s.population.filter(p=>p.answer?.trim());
     if(answers.some(p=>answerLanguageIssue(p.answer!,`${s.topic} ${s.question}`)))return 'Обновите ответы с речью на другом языке в карточках респондентов, затем сформируйте отчёт.';
     return answers.length||surveyComplete(s)?null:'Получите ответы респондентов на карте или завершите анкету. Одних профилей недостаточно для отчёта.';

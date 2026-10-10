@@ -5,6 +5,8 @@ import PDFReportButton from '../components/PDFReportButton';
 import ReportPreview from '../components/ReportPreview';
 import StageChecklist from '../components/StageChecklist';
 import InterviewStage from '../components/InterviewStage';
+import QuestionGenerator from '../components/QuestionGenerator';
+import { appendQuestionDrafts, type QuestionDraft, type QuestionMode } from '../lib/questionDrafts';
 import { guideValid, interviewTargets, questionnaireValid, readyReportStudy, stageAccess, stageChecks, type FlowCheck } from '../lib/studyFlow';
 import { answerLanguageIssue } from '../lib/respondentLanguage';
 import ModelingBasis from '../components/ModelingBasis';
@@ -24,7 +26,7 @@ export default function StudyPage() {
 function StudyContent() {
   const searchParams = useSearchParams();
   const requestedId = searchParams.get('id');
-  const requestedType = searchParams.get('type') === 'qualitative' ? 'qualitative' : 'mixed';
+  const requestedType: ResearchType = searchParams.get('type') === 'qualitative' ? 'qualitative' : searchParams.get('type') === 'quantitative' ? 'quantitative' : 'mixed';
   const [study, setStudy] = useState<Study | null>(null);
   const [ready, setReady] = useState(false);
   const [type, setType] = useState<ResearchType>('mixed');
@@ -38,6 +40,7 @@ function StudyContent() {
   const [contrast, setContrast] = useState(['', '']);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [busy, setBusy] = useState('');
+  const [questionsBusy, setQuestionsBusy] = useState(false);
   const [error, setError] = useState('');
   const [projects, setProjects] = useState<Study[]>([]);
   const lock = useRef(false);
@@ -51,7 +54,7 @@ function StudyContent() {
     try {
       const saved = readStudies();
       const loaded = saved.find(s => s.researchId === requestedId);
-      setProjects(saved.filter(p => p.type !== "quantitative"));
+      setProjects(saved.filter(p => p.type !== "quantitative" || p.workflow === "survey"));
       setError('');
       currentStudy.current = loaded ?? null;
       setStudy(loaded ?? null);
@@ -85,15 +88,21 @@ function StudyContent() {
     saveStudy(next);
     currentStudy.current = next;
     setStudy(next);
-    setProjects(readStudies().filter(p => p.type !== "quantitative"));
+    setProjects(readStudies().filter(p => p.type !== "quantitative" || p.workflow === "survey"));
     return next;
   }
   function update(patch: Partial<Study>) {
     if (!study || lock.current) return;
     try { commit({ ...study, ...patch }); setError(''); } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка сохранения.'); }
   }
+  function applyQuestions(mode: QuestionMode, questions: QuestionDraft[]) {
+    const latest = currentStudy.current;
+    if (!latest || lock.current) throw new Error('Дождитесь завершения текущей операции.');
+    commit(appendQuestionDrafts(latest, mode, questions));
+    setError('');
+  }
   function resolve(check:FlowCheck) {
-    if(!study||busy)return;
+    if(!study||busy||questionsBusy)return;
     const blocked=stageAccess(study,check.stage);
     const target=blocked??check;
     pendingFocus.current=target.target;
@@ -101,7 +110,7 @@ function StudyContent() {
     requestAnimationFrame(()=>{const element=document.getElementById(target.target);element?.scrollIntoView({block:'center'});(element?.matches('input,textarea,select,button')?element:element?.querySelector<HTMLElement>('input,textarea,select,button'))?.focus();});
   }
   function goToStage(next:number) {
-    if(!study)return;
+    if(!study||questionsBusy)return;
     const blocked=stageAccess(study,next);
     if(blocked){resolve(blocked);setError(`Перед следующим этапом: ${blocked.help}`);return;}
     update({stage:next});
@@ -131,7 +140,7 @@ function StudyContent() {
   function start() {
     if (!topic.trim() || !question.trim()) { setError('Заполните тему и исследовательский вопрос.'); return; }
     try {
-      const next = commit(createStudy(type, topic.trim(), question.trim()));
+      const next = commit({ ...createStudy(type, topic.trim(), question.trim()), ...(type === 'quantitative' ? { workflow: 'survey' as const } : {}) });
       localStorage.removeItem('study_form_draft_' + type);
       window.history.replaceState(null, '', `/study?id=${next.researchId}`);
     } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка создания.'); }
@@ -183,7 +192,7 @@ function StudyContent() {
   async function report(preliminary = false) {
     if (!study) return;
     await run('Создаём общий отчёт…', async () => {
-      if (preliminary ? study.type !== 'qualitative' || !completedInterviewIds(study).length : !interviewsComplete(study) || (study.type === 'mixed' && !surveyComplete(study))) throw new Error('Сначала завершите необходимые интервью и опрос.');
+      if (study.type === 'quantitative' ? !surveyComplete(study) : preliminary ? study.type !== 'qualitative' || !completedInterviewIds(study).length : !interviewsComplete(study) || (study.type === 'mixed' && !surveyComplete(study))) throw new Error('Сначала завершите необходимые интервью и опрос.');
       const includedIds = preliminary ? completedInterviewIds(study) : study.selectedIds;
       const data = await api(study, { action: 'report', evidence: buildReportEvidence(study, includedIds) });
       commit({ ...study, usage: currentStudy.current?.usage, report: data.report, themes: data.themes ?? [], reportRespondentIds: includedIds });
@@ -195,6 +204,7 @@ function StudyContent() {
   const validQuestionnaire = !!study && questionnaireValid(study);
   const completedIds = study ? completedInterviewIds(study) : [];
   const remainingIds = study?.selectedIds.filter(id => !completedIds.includes(id)) ?? [];
+  const steps = study?.type === 'quantitative' ? [{label:'Анкета и ответы',stage:0},{label:'Отчёт',stage:3}] : STEPS.map((label, stage)=>({label,stage}));
   const field = 'app-input mt-2';
   const button = 'app-button min-h-12 px-5';
   if (!ready) return <main className="p-10">Загрузка проектов…</main>;
@@ -205,19 +215,19 @@ function StudyContent() {
         {busy && study?.stage !== 2 && <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-blue-50 p-4 text-blue-800"><p role="status" aria-live="polite">{busy}</p><button className="text-sm font-bold underline" onClick={() => controller.current?.abort()}>Остановить</button></div>}
         {!study ? <>
           <h1 className="text-3xl font-black">{TYPE_LABELS[type]}</h1>
-          <p className="mt-3 text-gray-700">{type === 'mixed' ? 'Один проект: массовый опрос, отбор участников и интервью из той же выборки.' : 'Сформируйте группу и проведите глубинные интервью.'}</p>
+          <p className="mt-3 text-gray-700">{type === 'mixed' ? 'Один проект: массовый опрос, отбор участников и интервью из той же выборки.' : type === 'qualitative' ? 'Сформируйте группу и проведите глубинные интервью.' : 'Подготовьте анкету, получите ответы и скачайте отчёт.'}</p>
           <div className="mt-8 grid max-w-3xl gap-6">
-            <label>Тип исследования<select className={field} value={type} onChange={e => setType(e.target.value as ResearchType)}><option value="mixed">Смешанное</option><option value="qualitative">Качественное</option></select></label>
+            <label>Тип исследования<select className={field} value={type} onChange={e => setType(e.target.value as ResearchType)}><option value="quantitative">Количественное</option><option value="mixed">Смешанное</option><option value="qualitative">Качественное</option></select></label>
             <label>Тема<input className={field} maxLength={1000} value={topic} onChange={e => { setTopic(e.target.value); draft(e.target.value, question); }} /></label>
-            <label>Исследовательский вопрос<textarea className={field} maxLength={2000} value={question} onChange={e => { setQuestion(e.target.value); draft(topic, e.target.value); }} /></label>
+            <label>Что хотите узнать?<textarea className={field} maxLength={2000} value={question} onChange={e => { setQuestion(e.target.value); draft(topic, e.target.value); }} /></label>
             <button className={button} onClick={start}>Создать проект</button>
           </div>
           {!!projects.length && <div className="mt-10"><h2 className="text-xl font-black">Сохранённые проекты</h2><ul className="mt-4 space-y-3">{projects.map(p => <li key={p.researchId}><a href={`/study?id=${p.researchId}`} className="text-blue-600 underline">{p.topic} · {TYPE_LABELS[p.type]}</a></li>)}</ul></div>}
         </> : <>
           <p className="eyebrow">{TYPE_LABELS[study.type]}</p><h1 className="mt-3 text-3xl font-black">{study.topic}</h1><p className="mt-3 text-gray-700">{study.question}</p>
-          <nav aria-label="Этапы исследования" className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-4">{STEPS.map((step, index) => {
+          <nav aria-label="Этапы исследования" className={`my-6 grid grid-cols-2 gap-2 ${study.type !== 'quantitative' ? 'sm:grid-cols-4' : ''}`}>{steps.map(({label:step,stage:index}, position) => {
             const blocked=stageAccess(study,index),done=stageChecks(study,index).every(c=>c.done);
-            return <button key={step} disabled={!!busy} aria-current={study.stage === index ? 'step' : undefined} title={blocked?`Сначала: ${blocked.label}`:undefined} onClick={() => goToStage(index)} className={`rounded-xl border px-4 py-3 text-left text-sm font-bold ${study.stage === index ? 'border-blue-600 bg-blue-50 text-blue-700' : blocked?'border-gray-200 bg-gray-50 text-gray-500':'border-gray-200'} disabled:opacity-40`}><span>{done?'✓ ':''}{index + 1}. {index === 0 && study.type === 'qualitative' ? 'Группа' : step}</span></button>;
+            return <button key={step} disabled={!!busy || questionsBusy} aria-current={study.stage === index ? 'step' : undefined} title={blocked?`Сначала: ${blocked.label}`:undefined} onClick={() => goToStage(index)} className={`rounded-xl border px-4 py-3 text-left text-sm font-bold ${study.stage === index ? 'border-blue-600 bg-blue-50 text-blue-700' : blocked?'border-gray-200 bg-gray-50 text-gray-500':'border-gray-200'} disabled:opacity-40`}><span>{done?'✓ ':''}{position + 1}. {index === 0 && study.type === 'qualitative' ? 'Группа' : step}</span></button>;
           })}</nav>
           {study.stage<2&&<StageChecklist checks={stageChecks(study,study.stage)} onResolve={resolve}/>}
           <fieldset id="study-stage" tabIndex={-1} disabled={!!busy&&study.stage!==2} className="min-w-0 disabled:opacity-70">
@@ -228,9 +238,10 @@ function StudyContent() {
               <label>Размер выборки (1–500)<input className={field} type="number" min={1} max={500} value={size} onChange={e => setSize(Number(e.target.value))} /></label>
               <label>Пол<select className={field} value={gender} onChange={e => setGender(e.target.value)}><option>Все</option><option>женщина</option><option>мужчина</option></select></label>
               <label>Возраст<select className={field} value={age} onChange={e => setAge(e.target.value)}>{['Все', '18–25', '26–40', '41–60', '61–85'].map(v => <option key={v}>{v}</option>)}</select></label>
-            </div><button className={button} disabled={!Number.isInteger(size) || size < 1 || size > 500} onClick={generate}>Сформировать выборку</button></> : <p className="app-badge">Выборка готова · {study.population.length} участников</p>}
+            </div><button className={button} disabled={questionsBusy || !Number.isInteger(size) || size < 1 || size > 500} onClick={generate}>Сформировать выборку</button></> : <p className="app-badge">Выборка готова · {study.population.length} участников</p>}
             {study.type !== 'qualitative' && <>
               <p id="questionnaire-editor" className="text-gray-700">Добавьте вопросы и варианты ответа. После запуска опроса их нельзя изменить.</p>
+              {!study.responses.length && <QuestionGenerator key={study.researchId} projectId={study.researchId} mode="survey" topic={study.topic} brief={study.question} existing={study.questionnaire.map(q=>q.text)} disabled={!!busy} onApply={questions=>applyQuestions('survey',questions)} onBusyChange={setQuestionsBusy}/> }
               {study.questionnaire.map((q, index) => <div className="editorial-card p-5" key={q.id}>
                 <label>Вопрос {index + 1}<input className={field} maxLength={1000} disabled={study.responses.length > 0} value={q.text} onChange={e => update({ questionnaire: study.questionnaire.map(item => item.id === q.id ? { ...item, text: e.target.value } : item) })} /></label>
                 <label className="mt-4 block">Варианты ответа (разделитель — точка с запятой)<input className={field} disabled={study.responses.length > 0} value={q.options.join(';')} onChange={e => update({ questionnaire: study.questionnaire.map(item => item.id === q.id ? { ...item, options: e.target.value.split(';') } : item) })} /></label>
@@ -238,11 +249,11 @@ function StudyContent() {
               </div>)}
               <div id="survey-actions" className="flex flex-wrap gap-3">
                 <button className="app-button-secondary min-h-12 px-5" disabled={study.responses.length > 0 || study.questionnaire.length >= 10} onClick={() => update({ questionnaire: [...study.questionnaire, { id: crypto.randomUUID(), text: '', options: ['Да', 'Нет', 'Затрудняюсь ответить'] }] })}>Добавить вопрос</button>
-                <button className={button} disabled={!study.population.length || !validQuestionnaire || surveyComplete(study)} onClick={survey}>{study.responses.length ? 'Продолжить моделирование' : 'Запустить моделирование ответов'}</button>
+                <button className={button} disabled={questionsBusy || !study.population.length || !validQuestionnaire || surveyComplete(study)} onClick={survey}>{study.responses.length ? 'Продолжить моделирование' : 'Запустить моделирование ответов'}</button>
               </div>
               <p>Получено ответов: {study.responses.length} / {study.population.length}</p>
               {!!study.responses.length && <Quantitative study={study} />}
-              <button className={surveyComplete(study)?button:'app-button-secondary min-h-12 px-5'} onClick={() => goToStage(1)}>Перейти к отбору респондентов →</button>
+              <button className={surveyComplete(study)?button:'app-button-secondary min-h-12 px-5'} onClick={() => goToStage(study.type === 'quantitative' ? 3 : 1)}>{study.type === 'quantitative' ? 'Перейти к отчёту →' : 'Перейти к отбору респондентов →'}</button>
             </>}
             {study.type==='qualitative'&&study.population.length>0&&<button className={button} onClick={()=>goToStage(1)}>Выбрать участников для интервью →</button>}
           </div>}
@@ -272,21 +283,21 @@ function StudyContent() {
             <label className="block">Почему выбрали этих участников?<textarea id="selection-reason" className={field} placeholder="Например: выбраны участники разного возраста с противоположными ответами на анкету." maxLength={6000} value={study.selectionReason} onChange={e => update({ selectionReason: e.target.value, report: '' })} /></label>
             <button className={button} onClick={() => { setActiveId(study.selectedIds[0]??null); goToStage(2); }}>Перейти к глубинным интервью</button>
           </div>}
-          {study.stage === 2 && <InterviewStage study={study} busy={busy} error={error} activeId={activeId} onGuide={guide=>update({guide,report:''})} onError={setError} onRun={()=>interview(true)} onCancel={()=>controller.current?.abort()} onReport={()=>goToStage(3)} onView={setActiveId}/>}
+          {study.stage === 2 && <InterviewStage study={study} busy={busy} error={error} activeId={activeId} onGuide={guide=>update({guide,report:''})} onQuestions={questions=>applyQuestions('interview',questions)} questionsBusy={questionsBusy} onQuestionsBusy={setQuestionsBusy} onError={setError} onRun={()=>interview(true)} onCancel={()=>controller.current?.abort()} onReport={()=>goToStage(3)} onView={setActiveId}/>}
           {study.stage === 3 && <div className="space-y-6">
             <h2 className="text-2xl font-black">Единый аналитический отчёт</h2>
-            <p>Исходная выборка: {study.population.length}. Участников интервью: {study.selectedIds.length}.</p><p className="whitespace-pre-wrap">Принципы отбора: {study.selectionReason}</p>
+            <p>Исходная выборка: {study.population.length}.{study.type !== 'quantitative' && ` Участников интервью: ${study.selectedIds.length}.`}</p>{study.selectionReason && <p className="whitespace-pre-wrap">Принципы отбора: {study.selectionReason}</p>}
             {remainingIds.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <p>Завершено интервью: {completedIds.length} из {study.selectedIds.length}. Для итогового отчёта завершите интервью с остальными участниками.</p>
               <p className="mt-2">Ожидают завершения: {remainingIds.map(id => `#${id}`).join(', ')}.</p>
               <button className="app-button-secondary mt-3 min-h-12 px-5" onClick={() => { setActiveId(remainingIds[0]); update({ stage: 2 }); }}>Продолжить оставшиеся интервью</button>
               {study.type === 'qualitative' && completedIds.length > 0 && <><p className="mt-3">Предварительный отчёт включает только {completedIds.length} завершённых интервью. Остальные участники не включаются в анализ.</p><button className={`${button} mt-3`} onClick={() => report(true)}>Сформировать предварительный отчёт по {completedIds.length} интервью</button></>}
             </div>}
-            <p className="text-sm leading-6 text-gray-600">Сводка и графики строятся из сохранённых данных. Для тематической интерпретации нажмите «Добавить анализ». Скачать отчёт можно без дополнительного запроса к модели.</p>
-            <div className="flex flex-wrap items-center gap-4"><button className="app-button-secondary min-h-12 px-5" disabled={!interviewsComplete(study)} onClick={() => report()}>{study.report ? 'Обновить анализ' : 'Добавить анализ тем и мотивов'}</button><Link className="text-sm font-bold text-blue-700 underline" href={`/report?id=${study.researchId}`}>Открыть отчёт на отдельной странице ↗</Link></div>
+            <p className="text-sm leading-6 text-gray-600">Сводка и графики строятся из сохранённых данных. Для дополнительных выводов нажмите «Добавить анализ». Скачать отчёт можно без дополнительного запроса к модели.</p>
+            <div className="flex flex-wrap items-center gap-4"><button className="app-button-secondary min-h-12 px-5" disabled={study.type === 'quantitative' ? !surveyComplete(study) : !interviewsComplete(study)} onClick={() => report()}>{study.report ? 'Обновить анализ' : study.type === 'quantitative' ? 'Добавить анализ результатов' : 'Добавить анализ тем и мотивов'}</button><Link className="text-sm font-bold text-blue-700 underline" href={`/report?id=${study.researchId}`}>Открыть отчёт на отдельной странице ↗</Link></div>
             <PDFReportButton study={study} allowPartial/>
             {(completedIds.length>0||study.responses.length>0)&&<ReportPreview study={readyReportStudy(study,true)}/>}
-            <h3 className="text-xl font-black">Анкета и интервью каждого участника</h3>{study.selectedIds.map(id => <details className="editorial-card p-5" key={id}><summary className="cursor-pointer font-bold">#{id} {study.population.find(p => p.id === id)?.name}</summary><div className="mt-4"><Comparison study={study} id={id} /></div></details>)}
+            {study.type !== 'quantitative' && <h3 className="text-xl font-black">Анкета и интервью каждого участника</h3>}{study.selectedIds.map(id => <details className="editorial-card p-5" key={id}><summary className="cursor-pointer font-bold">#{id} {study.population.find(p => p.id === id)?.name}</summary><div className="mt-4"><Comparison study={study} id={id} /></div></details>)}
             <p className="text-sm text-gray-500">Все ответы синтетические. Эти результаты не заменяют эмпирическое исследование и не позволяют оценить реальное общественное мнение.</p>
           </div>}
           {study.stage!==3&&<details className="mt-8 text-sm"><summary className="cursor-pointer text-gray-500">Метод и источники</summary><ModelingBasis study={study}/></details>}

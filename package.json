@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:study": "node --test tests/study.test.mjs",
+    "test:study": "node --test tests/*.test.mjs",
     "data:refresh": "node scripts/refresh-demographics.mjs"
   },
   "dependencies": {

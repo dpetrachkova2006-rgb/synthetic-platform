@@ -25,19 +25,18 @@ export default function ResearchPage() {
 
     try {
       beginNewQuantitative();
-      const project = createStudy("quantitative", trimmedTopic, trimmedQuestion);
+      const project = { ...createStudy("quantitative", trimmedTopic, trimmedQuestion), workflow: 'survey' as const };
       saveStudy(project);
       localStorage.setItem("research_id", project.researchId);
       localStorage.setItem("research_type", project.type);
+      localStorage.setItem("research_topic", trimmedTopic);
+      localStorage.setItem("research_question", trimmedQuestion);
+      localStorage.removeItem("research_form_draft");
+      router.push(`/study?id=${project.researchId}`);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Не удалось сохранить проект.");
       return;
     }
-    localStorage.setItem("research_topic", trimmedTopic);
-    localStorage.setItem("research_question", trimmedQuestion);
-
-    localStorage.removeItem("research_form_draft");
-    router.push("/generation");
   }
 
   return (
@@ -133,7 +132,7 @@ export default function ResearchPage() {
                   text-gray-700
                 "
               >
-                Сформулируйте тему и главный исследовательский вопрос
+                Опишите тему и что хотите узнать. На следующем шаге можно написать вопросы самому или сгенерировать анкету.
               </p>
             </div>
 
@@ -250,7 +249,7 @@ export default function ResearchPage() {
                       text-black
                     "
                   >
-                    Главный вопрос
+                    Что хотите узнать?
                   </label>
 
                   <textarea

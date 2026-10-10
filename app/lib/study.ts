@@ -7,6 +7,7 @@ export type SurveyQuestion = { id: string; text: string; options: string[] };
 export type SurveyResponse = { respondentId: number; answers: Record<string, string> };
 export type InterviewTurn = { question: string; answer: string };
 export type Study = {
+  workflow?: 'survey';
   replacedInterviews?: {respondentId:number; question:string; answer:string; replacedAt:string}[];
   themes?: { title: string; interpretation: string; quotes: { respondentId: number; question: string; quote: string }[] }[];
   sources?: { title: string; organization: string; date: string; geography: string; population: string; version: string; retrievedAt: string; application: string; url: string }[];
@@ -65,7 +66,10 @@ export function distributions(study: Study) {
   return study.questionnaire.map(q => ({ ...q, distribution: q.options.map(option => ({ option, count: study.responses.filter(r => r.answers[q.id] === option).length })) }));
 }
 export function buildReportEvidence(study: Study, includedIds = study.selectedIds) {
-  if (!includedIds.length || new Set(includedIds).size !== includedIds.length || includedIds.some(id => !completedInterviewIds(study).includes(id))) throw new Error('Для отчёта нужны завершённые интервью выбранных участников.');
+  if (study.type === 'quantitative') {
+    if (!surveyComplete(study)) throw new Error('Для отчёта завершите количественную анкету.');
+    includedIds = [];
+  } else if (!includedIds.length || new Set(includedIds).size !== includedIds.length || includedIds.some(id => !completedInterviewIds(study).includes(id))) throw new Error('Для отчёта нужны завершённые интервью выбранных участников.');
   const counts = (field: 'gender' | 'city' | 'education' | 'income') => Object.fromEntries([...new Set(study.population.map(p => p[field]))].map(value => [value, study.population.filter(p => p[field] === value).length]));
   return { researchId: study.researchId, type: study.type, topic: study.topic, question: study.question, createdAt: study.createdAt, sample: { size: study.population.length, age: study.population.length ? [Math.min(...study.population.map(p => p.age)), Math.max(...study.population.map(p => p.age))] : [], gender: counts('gender'), city: counts('city'), education: counts('education'), income: counts('income') }, quantitative: distributions(study), sources: study.sources ?? [], selectionReason: study.selectionReason, interviewCoverage: { selected: study.selectedIds.length, completed: completedInterviewIds(study).length, included: includedIds.length, excludedIds: study.selectedIds.filter(id => !includedIds.includes(id)), preliminary: includedIds.length < study.selectedIds.length }, interviews: includedIds.map(id => ({ respondent: compactProfile(study.population.find(p => p.id === id)!, 'interview'), survey: study.responses.find(r => r.respondentId === id), transcript: study.interviews[id] ?? [] })) };
 }

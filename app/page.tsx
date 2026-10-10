@@ -12,7 +12,7 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       try {
         const study = readStudies().at(-1);
-        if (study) setLatest({ topic: study.topic, type: TYPE_LABELS[study.type], href: study.type === 'quantitative' ? '/studies' : `/study?id=${study.researchId}` });
+        if (study) setLatest({ topic: study.topic, type: TYPE_LABELS[study.type], href: study.type === 'quantitative' && study.workflow !== 'survey' ? '/studies' : `/study?id=${study.researchId}` });
         else {
           const topic = localStorage.getItem('research_topic');
           if (topic) setLatest({ topic, href: '/map', type: 'Сохранённое исследование' });

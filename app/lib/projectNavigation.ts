@@ -10,14 +10,14 @@ export function snapshotActiveProject() {
     }
   }
   const project = readStudies().find(p => p.researchId === id && p.type === 'quantitative');
-  if (!project) return;
+  if (!project || project.workflow === 'survey') return;
   const legacy = Object.fromEntries(LEGACY_KEYS.flatMap(k => { const v = localStorage.getItem(k); return v === null ? [] : [[k, v]]; }));
   const population = legacy.synthetic_population ? JSON.parse(legacy.synthetic_population) : project.population;
   saveStudy({ ...project, population, legacy });
 }
 export function activateProject(project: Study) {
   snapshotActiveProject();
-  if (project.type !== 'quantitative') return `/study?id=${project.researchId}`;
+  if (project.type !== 'quantitative' || project.workflow === 'survey') return `/study?id=${project.researchId}`;
   for (const key of LEGACY_KEYS) localStorage.removeItem(key);
   for (const [key, value] of Object.entries(project.legacy ?? {})) if (LEGACY_KEYS.includes(key)) localStorage.setItem(key, value);
   localStorage.setItem('research_id', project.researchId);
