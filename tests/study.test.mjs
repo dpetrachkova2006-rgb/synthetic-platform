@@ -63,10 +63,13 @@ assert.equal((await POST(new Request('http://localhost',{method:'POST',body:'inv
 const base={researchId:s.researchId,topic:s.topic,question:s.question};assert.equal((await POST(request({...base,action:'survey',respondents:[],questionnaire:s.questionnaire}))).status,400);
 const originalKey = process.env.GROQ_API_KEY;
 process.env.GROQ_API_KEY='test-only';const realFetch=global.fetch;const upstream=data=>global.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify(data)}}]});
-upstream({ report: 'Предварительный отчёт по одному завершённому интервью.', themes: [{ title:'Оговорки',interpretation:'Ответ сопровождается оговорками.',quotes:[{quoteId:1}]}] });
+upstream({ report: '99% респондентов против. This is fabricated.', themes: [{ title:'Оговорки',interpretation:'Ответ сопровождается оговорками.',quotes:[{quoteId:1}]}] });
 const quotedReport = await POST(request({ ...base, action: 'report', evidence: draftEvidence }));
 assert.equal(quotedReport.status, 200);
-assert.deepEqual((await quotedReport.json()).themes[0].quotes[0], {respondentId:7,question:'Почему?',quote:'Есть оговорки.'});
+const verifiedData = await quotedReport.json();
+assert.deepEqual(verifiedData.themes[0].quotes[0], {respondentId:7,question:'Почему?',quote:'Есть оговорки.'});
+assert.doesNotMatch(verifiedData.report, /99%|fabricated/);
+assert.match(verifiedData.report, /Предварительный отчёт/);
 upstream({report:'Анализ',themes:[{title:'Поддельная цитата',interpretation:'Проверка.',quotes:[{quoteId:999}]}]});
 assert.equal((await POST(request({...base,action:'report',evidence:draftEvidence}))).status,502);
 // Russian respondent speech: proper names stay intact, foreign sentences never persist.

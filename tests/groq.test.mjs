@@ -63,3 +63,19 @@ test('report quote references preserve exact source excerpts and participant num
   assert.ok(quotes.every(q => q.respondentId === 91 && q.question === 'Почему?' && source.includes(q.quote)));
   assert.deepEqual(reportQuoteLibrary([null, { transcript: [] }]), []);
 });
+
+test('saved reports use counted statistics and never reuse fabricated model percentages', () => {
+  const { verifiedReportText } = load(root + '/app/lib/verifiedReport.ts');
+  const evidence = { type: 'mixed', sample: { size: 30 }, quantitative: [{ text: 'Как оформляете заказ?', distribution: [{ option: 'Приложение', count: 10 }, { option: 'Сайт', count: 10 }, { option: 'Телефон', count: 10 }] }], interviewCoverage: { selected: 2, included: 1, preliminary: true } };
+  const text = verifiedReportText(evidence, [{ title: 'Удобство', interpretation: 'Участнику удобно сравнивать товары.' }]);
+  assert.match(text, /Предварительный отчёт/);
+  assert.match(text, /1 из 2/);
+  assert.match(text, /«Приложение», «Сайт», «Телефон» — 10 из 30 ответов \(33,3%\)/);
+  assert.match(text, /Участнику удобно/);
+  const study = load(root + '/app/lib/study.ts');
+  const { reportNarrative } = load(root + '/app/lib/reportData.ts');
+  const project = { ...study.createStudy('quantitative', 'Покупки', 'Как оформляете заказ?'), workflow: 'survey', population: [{ id: 1, age: 30, gender: 'женщина' }, { id: 2, age: 35, gender: 'мужчина' }], questionnaire: [{ id: 'q', text: 'Как оформляете заказ?', options: ['Приложение', 'Сайт'] }], responses: [{ respondentId: 1, answers: { q: 'Приложение' } }, { respondentId: 2, answers: { q: 'Сайт' } }], report: 'Приложение выбирают 99% участников.' };
+  assert.match(reportNarrative(project), /1 из 2 ответов \(50%\)/);
+  assert.doesNotMatch(reportNarrative(project), /99%/);
+  assert.equal(reportNarrative({ ...project, workflow: undefined }), project.report); // Preserve the separate legacy report format.
+});

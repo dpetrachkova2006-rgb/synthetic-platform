@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 import path from 'node:path';
 import { guideQuestions, TYPE_LABELS, type Study } from './study';
-import { makeReportData, profileFrequencies, quoteExcerpt } from './reportData';
+import { makeReportData, profileFrequencies, quoteExcerpt, reportNarrative } from './reportData';
 import { reportBlocker } from './studyFlow';
 export { reportBlocker } from './studyFlow';
 
@@ -74,7 +74,7 @@ export async function generatePDF(s: Study): Promise<Buffer> {
   heading('09','Выводы');
   for(const insight of data.insights)paragraph(`${insight.title}. ${insight.text}`);
   paragraph('Полученный материал помогает уточнять формулировки и готовить гипотезы для проверки людьми. Он не подтверждает причинные связи и не заменяет реальное исследование.');
-  if(s.report){label('Сохранённый аналитический текст');for(const block of s.report.replace(/\*\*/g,'').split(/\n\s*\n/))paragraph(block.replace(/^#+\s*/gm,''));}
+  if(s.report){label('Аналитические выводы по сохранённым данным');for(const block of reportNarrative(s).replace(/\*\*/g,'').split(/\n\s*\n/))paragraph(block.replace(/^#+\s*/gm,''));}
   heading('10','Границы интерпретации');
   card('Как использовать результаты','Респонденты и ответы синтетические. Репрезентативность не установлена. Модель может воспроизводить стереотипы и допускать ошибки. Число профилей не равно числу независимых наблюдений людей. Доверительные интервалы и статистическая значимость не рассчитываются. Для решений о людях нужна проверка реальными данными.');
   if(data.preliminary)paragraph('Часть интервью не завершена; причины отсутствия ответов могут влиять на состав включённой группы.');
