@@ -66,3 +66,9 @@ The adapter accepts only `:free` models (or `openrouter/free`), removes model fa
 As checked on 2026-10-09, OpenRouter advertises 50 free requests per day per account. All site visitors share this allowance. One research project can use many requests. Availability and limits can change; a free endpoint is not a guarantee of unrestricted topics. NVIDIA's free endpoint asks users not to upload personal or confidential data; this project should send synthetic profiles only.
 
 Validation: `npm run test:study`, `npx tsc --noEmit`, `npm run lint`, `npm run build`. Provider tests mock completions; successful live generation requires a valid OpenRouter key.
+
+### Визуальный отчёт
+
+На сайте результаты представлены краткими карточками, кольцевой диаграммой и распределениями по выбранному вопросу, сравнением групп, картой проверенных цитат и связью анкеты с интервью. Подробности раскрываются по запросу. Карта тем показывает наличие цитаты, а не долю участников с определённым мнением. Возраст и пол описывают исходную группу.
+
+PDF использует те же сохранённые данные, диаграммы и цитаты, но добавляет связные пояснения к каждому результату, описание связи этапов, метода и источников. Полные ответы сохраняются в приложении. Визуализации и расширенный текст PDF не требуют дополнительных запросов к модели. Старые проекты используют новую подачу без изменения сохранённых ответов.

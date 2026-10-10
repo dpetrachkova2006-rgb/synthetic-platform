@@ -304,20 +304,18 @@ function StudyContent() {
           </div>}
           {study.stage === 2 && <InterviewStage study={study} busy={busy} error={error} activeId={activeId} onGuide={guide=>update({guide,report:''})} onQuestions={questions=>applyQuestions('interview',questions)} questionsBusy={questionsBusy} questionsPending={questionsPending} onQuestionsBusy={setQuestionsBusy} onQuestionsPending={setQuestionsPending} onError={setError} onRun={()=>interview(true)} onCancel={()=>controller.current?.abort()} onReport={()=>goToStage(3)} onView={setActiveId}/>}
           {study.stage === 3 && <div className="space-y-6">
-            <h2 className="text-2xl font-black">Единый аналитический отчёт</h2>
-            <p>Исходная выборка: {study.population.length}.{study.type !== 'quantitative' && ` Участников интервью: ${study.selectedIds.length}.`}</p>{study.selectionReason && <p className="whitespace-pre-wrap">Принципы отбора: {study.selectionReason}</p>}
+            <h2 className="text-2xl font-black">Результаты исследования</h2>
             {remainingIds.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <p>Завершено интервью: {completedIds.length} из {study.selectedIds.length}. Для итогового отчёта завершите интервью с остальными участниками.</p>
               <p className="mt-2">Ожидают завершения: {remainingIds.map(id => `#${id}`).join(', ')}.</p>
               <button className="app-button-secondary mt-3 min-h-12 px-5" onClick={() => { setActiveId(remainingIds[0]); update({ stage: 2 }); }}>Продолжить оставшиеся интервью</button>
               {study.type === 'qualitative' && completedIds.length > 0 && <><p className="mt-3">Предварительный отчёт включает только {completedIds.length} завершённых интервью. Остальные участники не включаются в анализ.</p><button className={`${button} mt-3`} onClick={() => report(true)}>Сформировать предварительный отчёт по {completedIds.length} интервью</button></>}
             </div>}
-            <p className="text-sm leading-6 text-gray-600">Сводка и графики строятся из сохранённых данных. Для дополнительных выводов нажмите «Добавить анализ». Скачать отчёт можно без дополнительного запроса к модели.</p>
+            <p className="text-sm leading-6 text-gray-600">Главное — в сводке и диаграммах ниже. PDF содержит подробные пояснения и полные ответы.</p>
             <div className="flex flex-wrap items-center gap-4"><button className="app-button-secondary min-h-12 px-5" disabled={study.type === 'quantitative' ? !surveyComplete(study) : !interviewsComplete(study)} onClick={() => report()}>{study.report ? 'Обновить анализ' : study.type === 'quantitative' ? 'Добавить анализ результатов' : 'Добавить анализ тем и мотивов'}</button><Link className="text-sm font-bold text-blue-700 underline" href={`/report?id=${study.researchId}`}>Открыть отчёт на отдельной странице ↗</Link></div>
             <PDFReportButton study={study} allowPartial/>
             {(completedIds.length>0||study.responses.length>0)&&<ReportPreview study={readyReportStudy(study,true)}/>}
-            {study.type !== 'quantitative' && <h3 className="text-xl font-black">Анкета и интервью каждого участника</h3>}{study.selectedIds.map(id => <details className="editorial-card p-5" key={id}><summary className="cursor-pointer font-bold">#{id} {study.population.find(p => p.id === id)?.name}</summary><div className="mt-4"><Comparison study={study} id={id} /></div></details>)}
-            <p className="text-sm text-gray-500">Все ответы синтетические. Эти результаты не заменяют эмпирическое исследование и не позволяют оценить реальное общественное мнение.</p>
+            {study.type !== 'quantitative' && <details className="report-detail"><summary>Сопоставить анкету и интервью участника</summary><div className="mt-4 space-y-4">{study.selectedIds.map(id => <details className="editorial-card p-5" key={id}><summary className="cursor-pointer font-bold">#{id} {study.population.find(p => p.id === id)?.name}</summary><div className="mt-4"><Comparison study={study} id={id} /></div></details>)}</div></details>}
           </div>}
           {study.stage!==3&&<details className="mt-8 text-sm"><summary className="cursor-pointer text-gray-500">Метод и источники</summary><ModelingBasis study={study}/></details>}
           </fieldset>
