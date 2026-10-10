@@ -1187,7 +1187,7 @@ export async function generateSyntheticRespondents(
     );
 
   if (settings.requireAI && distributionResult.sourceMode !== "ai-estimate") {
-    throw new Error("AI-генерация выборки недоступна. Повторите попытку позже; резервные результаты не использованы.");
+    throw new Error(distributionResult.error || "Генерация выборки недоступна. Повторите попытку позже; резервные результаты не использованы.");
   }
 
   const opinionWeights =

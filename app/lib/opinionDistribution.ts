@@ -13,6 +13,7 @@ export type OpinionDistribution = {
 };
 
 export type OpinionDistributionResult = {
+  error?: string;
   distribution: OpinionDistribution;
   explanation: string;
   sourceMode:
@@ -123,6 +124,7 @@ export async function generateOpinionDistribution(
       explanation:
         "Использовано резервное распределение, поскольку AI-оценка временно недоступна.",
       sourceMode: "fallback",
+      error: error instanceof Error ? error.message : 'Не удалось получить распределение мнений.',
     };
   }
 }

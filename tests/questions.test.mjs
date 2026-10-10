@@ -83,6 +83,13 @@ test('question API validates generation, language, errors and quantitative evide
     const quantitative = { ...study.createStudy('quantitative', 'Транспорт', 'Поездки'), workflow: 'survey', population: [{ id: 7, name: 'Анна', age: 25, gender: 'женщина', city: 'Москва', education: 'высшее', income: 'средний' }], questionnaire: [{ id: 'q', text: 'Ездите на автобусе?', options: ['Да', 'Нет'] }], responses: [{ respondentId: 7, answers: { q: 'Да' } }] };
     const reportBody = { researchId: quantitative.researchId, topic: quantitative.topic, question: quantitative.question, action: 'report', evidence: study.buildReportEvidence(quantitative) };
     assert.equal((await studyApi.POST(request(reportBody))).status, 200);
+    assert.equal(sent.response_format.json_schema.name, 'survey_report');
+    assert.match(sent.messages[0].content, /Ровно четыре раздела/);
+    assert.ok(!sent.messages[0].content.includes('Разделы: Общая информация'));
+    upstream({ report: 'Данные имеют limited representativeness.', themes: [] });
+    const foreignReport = await studyApi.POST(request(reportBody));
+    assert.equal(foreignReport.status, 502);
+    assert.match((await foreignReport.json()).error, /другом языке/);
     reportBody.evidence.quantitative[0].distribution[0].count = 0;
     assert.equal((await studyApi.POST(request(reportBody))).status, 400);
   } finally {

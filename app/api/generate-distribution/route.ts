@@ -339,19 +339,12 @@ export async function POST(
     );
 
     if (!groqResponse.ok) {
-      const errorText =
-        await groqResponse.text();
-
-      console.error(
-        "Ошибка Groq:",
-        groqResponse.status,
-        errorText
-      );
+      const failure = await groqResponse.json().catch(() => null);
+      const providerError = failure?.error?.message;
 
       return NextResponse.json(
         {
-          error:
-            "Не удалось получить AI-распределение мнений.",
+          error: typeof providerError === 'string' && providerError.includes('OpenRouter') ? providerError : 'Не удалось получить распределение мнений. Повторите позже.',
 
           distribution:
             FALLBACK_DISTRIBUTION,
@@ -406,6 +399,7 @@ export async function POST(
 
     return NextResponse.json(
       {
+        error: error instanceof Error && error.name === 'TimeoutError' ? 'Время генерации выборки истекло. Повторите попытку.' : 'Не удалось подготовить выборку. Повторите попытку.',
         distribution:
           FALLBACK_DISTRIBUTION,
 

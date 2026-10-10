@@ -78,9 +78,9 @@ export default function QuestionGenerator({ projectId, mode, topic: initialTopic
   return <section className="question-assistant" aria-label={mode === 'survey' ? 'Помощник для анкеты' : 'Помощник для интервью'}>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-3"><span className="question-assistant-icon"><Sparkles size={18}/></span><div><h3 className="text-sm font-bold">Вопросы по вашей идее</h3><p className="mt-1 text-xs text-gray-600">Опишите, что хотите узнать. Мы подготовим черновик.</p></div></div>
-      <button type="button" className="app-button-secondary min-h-11 px-4 text-sm" aria-expanded={open} aria-controls={id} disabled={disabled || !ready || maxCount === 0} onClick={() => setOpen(!open)}>{open ? 'Свернуть помощника' : 'Сгенерировать вопросы за меня'}</button>
+      <button type="button" className="app-button-secondary min-h-11 px-4 text-sm" aria-expanded={open} aria-controls={id} disabled={disabled || !ready || (maxCount === 0 && !questions.length && !open)} onClick={() => setOpen(!open)}>{open ? 'Свернуть помощника' : questions.length ? 'Открыть черновик вопросов' : 'Сгенерировать вопросы за меня'}</button>
     </div>
-    {maxCount === 0 && <p className="mt-3 text-xs text-gray-600">Достигнуто максимальное число вопросов. Можно отредактировать существующие.</p>}
+    {maxCount === 0 && <p className="mt-3 text-xs text-gray-600">Достигнуто максимальное число вопросов. {questions.length ? 'Удалите лишние вопросы из исследования или откройте черновик и нажмите «Не использовать».' : 'Можно отредактировать существующие.'}</p>}
     {message && <p role="status" className="mt-3 text-sm text-blue-800">{message}</p>}
     {questions.length > 0 && !busy && <p className="mt-3 text-xs text-blue-800">Перед запуском добавьте черновик или нажмите «Не использовать».</p>}
     {open && <div id={id} className="mt-5 space-y-5">
@@ -102,7 +102,8 @@ export default function QuestionGenerator({ projectId, mode, topic: initialTopic
           <textarea id={`${id}-q-${i}`} className="app-input mt-2 min-h-20" maxLength={1000} value={q.text} onChange={e => setQuestions(questions.map((item, index) => index === i ? { ...item, text: e.target.value } : item))}/>
           {mode === 'survey' && <label className="mt-3 block text-xs font-semibold text-gray-600">Варианты ответа через точку с запятой<textarea className="app-input mt-2 min-h-20 text-sm" value={q.options.join('; ')} onChange={e => setQuestions(questions.map((item, index) => index === i ? { ...item, options: e.target.value.split(';') } : item))}/></label>}
         </div>)}</fieldset>
-        <div className="flex flex-wrap items-center gap-4"><button type="button" className="app-button inline-flex min-h-12 items-center gap-2 px-5 text-sm" disabled={busy || disabled} onClick={apply}>Добавить в {mode === 'survey' ? 'анкету' : 'интервью'} <ArrowRight size={16}/></button><button type="button" className="text-sm font-semibold text-gray-600 underline" disabled={busy || disabled} onClick={() => { setQuestions([]); setError(''); }}>Не использовать</button></div>
+        {questions.length > maxCount && <p className="text-xs text-blue-800">Не хватает места для черновика. Удалите лишние вопросы из исследования или черновика.</p>}
+        <div className="flex flex-wrap items-center gap-4"><button type="button" className="app-button inline-flex min-h-12 items-center gap-2 px-5 text-sm" disabled={busy || disabled || questions.length > maxCount} onClick={apply}>Добавить в {mode === 'survey' ? 'анкету' : 'интервью'} <ArrowRight size={16}/></button><button type="button" className="text-sm font-semibold text-gray-600 underline" disabled={busy || disabled} onClick={() => { setQuestions([]); setError(''); }}>Не использовать</button></div>
       </div>}
     </div>}
     {error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}

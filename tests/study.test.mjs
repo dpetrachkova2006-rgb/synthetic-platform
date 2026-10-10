@@ -174,6 +174,14 @@ for (const [status, expected] of [[401, /отклонил/], [402, /отключ
   assert.equal(response.status, status);
   assert.match((await response.json()).error.message, expected);
 }
+global.fetch = async () => Response.json({ error: { message: 'Rate limit exceeded: free-models-per-day. private account detail', metadata: { headers: { 'X-RateLimit-Reset': String(Date.now() + 3600000) } } } }, { status: 429 });
+const dailyLimit = await provider.aiFetch('', { body: '{}' });
+const dailyMessage = (await dailyLimit.json()).error.message;
+assert.match(dailyMessage, /дневной бесплатный лимит/);
+assert.match(dailyMessage, /Лимит обновится.*МСК/);
+assert.ok(!dailyMessage.includes('private account detail'));
+global.fetch = async () => Response.json({ error: { message: 'Rate limit exceeded: free-models-per-min.' } }, { status: 429 });
+assert.match((await (await provider.aiFetch('', { body: '{}' })).json()).error.message, /Подождите минуту/);
 let interviewPayload;
 global.fetch=async(url,options)=>{interviewPayload=JSON.parse(options.body);return Response.json({choices:[{message:{content:JSON.stringify({turns:[{question:'Почему?',answer:'Есть оговорки.'},{question:'Что изменить?',answer:'Улучшить доступность.'}]})}}]});};
 assert.equal((await POST(request(interviewBatch))).status,200);
@@ -216,6 +224,8 @@ const people=await generator.generateSyntheticRespondents(20,'Транспорт
 assert.equal(distributionCalls,1);assert.equal(new Set(people.map(p=>p.id)).size,20);assert.ok(people.every(p=>p.gender==='женщина'&&p.age>=25&&p.age<=29));
 await assert.rejects(()=>generator.generateSyntheticRespondents(20,'Транспорт','Удобно ли?',{age:'80–85',dataFrame:'wb-rus-2024',requireAI:true}));
 assert.equal(distributionCalls,1);
+global.fetch=async()=>Response.json({distribution,explanation:'Недоступно',sourceMode:'fallback',error:'Исчерпан дневной бесплатный лимит OpenRouter.'});
+await assert.rejects(()=>generator.generateSyntheticRespondents(2,'Транспорт','Удобно ли?',{requireAI:true}),/дневной бесплатный лимит/);
 const cancelled=new AbortController();cancelled.abort();
 global.fetch=async(_url,options)=>{options.signal.throwIfAborted();};
 await assert.rejects(()=>generator.generateSyntheticRespondents(20,'Транспорт','Удобно ли?',{signal:cancelled.signal,requireAI:true}),{name:'AbortError'});

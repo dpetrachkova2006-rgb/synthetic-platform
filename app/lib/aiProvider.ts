@@ -49,9 +49,20 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise
   }
   const response = await fetch(config.url, { ...options, headers, body: JSON.stringify(payload), signal: options.signal || AbortSignal.timeout(55000) });
   if (config.provider === 'openrouter' && !response.ok) {
+    let rateMessage = 'Исчерпан бесплатный лимит OpenRouter или модель временно перегружена. Сохранённые ответы доступны; повторите позже.';
+    if (response.status === 429) {
+      const failure = await response.clone().json().catch(() => null);
+      const reason = typeof failure?.error?.message === 'string' ? failure.error.message : '';
+      if (reason.includes('free-models-per-day')) {
+        rateMessage = 'Исчерпан дневной бесплатный лимит OpenRouter.';
+        const reset = Number(failure?.error?.metadata?.headers?.['X-RateLimit-Reset'] ?? response.headers.get('X-RateLimit-Reset'));
+        if (Number.isFinite(reset) && reset > Date.now() && reset < Date.now() + 172800000) rateMessage += ` Лимит обновится ${new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(reset)} (МСК).`;
+        rateMessage += ' Полученные результаты сохранены; после обновления лимита продолжите с этого этапа.';
+      } else if (reason.includes('free-models-per-min')) rateMessage = 'Слишком много запросов к OpenRouter за минуту. Подождите минуту и продолжите. Полученные результаты сохранены.';
+    }
     const error = response.status === 401 ? 'OpenRouter отклонил API-ключ. Проверьте серверные настройки.'
       : response.status === 402 ? 'OpenRouter требует оплату. Платная генерация в проекте отключена.'
-      : response.status === 429 ? 'Исчерпан бесплатный лимит OpenRouter или модель временно перегружена. Сохранённые ответы доступны; повторите позже.'
+      : response.status === 429 ? rateMessage
       : response.status === 404 || response.status === 503 ? 'Бесплатная модель OpenRouter сейчас недоступна. Повторите позже.' : null;
     if (error) return Response.json({ error: { message: error } }, { status: response.status });
   }
