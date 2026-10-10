@@ -153,7 +153,7 @@ test('report analysis receives the complete answer once and still returns an exa
   process.env.AI_PROVIDER = 'groq'; process.env.GROQ_API_KEY = 'test-only';
   const answer = 'Мне важна точность доставки. Ещё я хочу выбирать удобное время. Цены тоже сравниваю. Но иногда выбираю магазин рядом.';
   let sent;
-  global.fetch = async (_, options) => { sent = JSON.parse(options.body); return Response.json({ choices: [{ message: { content: JSON.stringify({ report: '', themes: [{ title: 'Точность доставки', interpretation: 'Участник ценит соблюдение времени доставки.', quotes: [{ quoteId: 1 }] }] }) } }] }); };
+  global.fetch = async (_, options) => { sent = JSON.parse(options.body); return Response.json({ choices: [{ message: { content: JSON.stringify({ report: '', insights: [{title:'Удобство зависит от условий',finding:'Ответ содержит конкретное условие выбора.',explanation:'Участник описывает свой опыт, который можно проверить отдельно.',nextStep:'Уточнить условия выбора в следующем интервью.',factIds:[],quoteIds:[1]}], themes: [{ title: 'Точность доставки', interpretation: 'Участник ценит соблюдение времени доставки.', quotes: [{ quoteId: 1 }] }] }) } }] }); };
   try {
     const { POST } = load(root + '/app/api/study/route.ts');
     const evidence = { type: 'qualitative', sample: { size: 1 }, interviewCoverage: { selected: 1, included: 1 }, interviews: [{ respondent: { id: 7, name: 'Анна' }, transcript: [{ question: 'Что важно?', answer }] }] };

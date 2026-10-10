@@ -63,7 +63,7 @@ assert.equal((await POST(new Request('http://localhost',{method:'POST',body:'inv
 const base={researchId:s.researchId,topic:s.topic,question:s.question};assert.equal((await POST(request({...base,action:'survey',respondents:[],questionnaire:s.questionnaire}))).status,400);
 const originalKey = process.env.GROQ_API_KEY;
 process.env.GROQ_API_KEY='test-only';const realFetch=global.fetch;const upstream=data=>global.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify(data)}}]});
-upstream({ report: '99% респондентов против. This is fabricated.', themes: [{ title:'Оговорки',interpretation:'Ответ сопровождается оговорками.',quotes:[{quoteId:1}]}] });
+upstream({ report: '99% респондентов против. This is fabricated.', insights: [{title:'Удобство зависит от условий',finding:'Ответ содержит конкретное условие выбора.',explanation:'Участник описывает свой опыт, который можно проверить отдельно.',nextStep:'Уточнить условия выбора в следующем интервью.',factIds:[],quoteIds:[1]}], themes: [{ title:'Оговорки',interpretation:'Ответ сопровождается оговорками.',quotes:[{quoteId:1}]}] });
 const quotedReport = await POST(request({ ...base, action: 'report', evidence: draftEvidence }));
 assert.equal(quotedReport.status, 200);
 const verifiedData = await quotedReport.json();

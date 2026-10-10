@@ -79,7 +79,8 @@ test('question API validates generation, language, errors and quantitative evide
     const limited = await api.POST(request(body)); assert.equal(limited.status, 429); assert.match((await limited.json()).error, /лимит/);
     global.fetch = async () => Response.json({ choices: [{ finish_reason: 'length', message: { content: '{"questions":[' } }] });
     assert.match((await (await api.POST(request(body))).json()).error, /прервалась/);
-    upstream({ report: 'Количественный анализ сохранённых ответов.', themes: [] });
+    const insight={title:'Автобус входит в повседневные поездки',finding:'В сохранённой анкете выбран автобус.',explanation:'Других участников пока нет, поэтому сравнить привычки нельзя.',nextStep:'Спросить, в каких ситуациях автобус заменяют другим транспортом.',factIds:['survey:q'],quoteIds:[]};
+    upstream({ report: 'Количественный анализ сохранённых ответов.', themes: [], insights:[insight] });
     const quantitative = { ...study.createStudy('quantitative', 'Транспорт', 'Поездки'), workflow: 'survey', population: [{ id: 7, name: 'Анна', age: 25, gender: 'женщина', city: 'Москва', education: 'высшее', income: 'средний' }], questionnaire: [{ id: 'q', text: 'Ездите на автобусе?', options: ['Да', 'Нет'] }], responses: [{ respondentId: 7, answers: { q: 'Да' } }] };
     const reportBody = { researchId: quantitative.researchId, topic: quantitative.topic, question: quantitative.question, action: 'report', evidence: study.buildReportEvidence(quantitative) };
     const callsBeforeReport = calls;
@@ -87,9 +88,11 @@ test('question API validates generation, language, errors and quantitative evide
     assert.equal(countedReport.status, 200);
     const countedData = await countedReport.json();
     assert.match(countedData.report, /«Да» — 1 из 1 ответов \(100%\)/);
-    assert.deepEqual(countedData.usage, { tokens: 0, estimated: false });
-    assert.equal(calls, callsBeforeReport); // Statistics and quantitative conclusions never come from model prose.
-    upstream({ report: 'Данные имеют limited representativeness.', themes: [] });
+    assert.ok(countedData.usage.tokens > 0);
+    assert.equal(calls, callsBeforeReport + 1);
+    assert.equal(countedData.insights[0].facts[0].rows[0].count,1);
+    assert.equal(JSON.parse(sent.messages[1].content).evidence.facts[0].title,'Ездите на автобусе?');
+    upstream({ report: 'Данные имеют limited representativeness.', themes: [], insights:[insight] });
     const foreignReport = await studyApi.POST(request(reportBody));
     assert.equal(foreignReport.status, 200);
     assert.doesNotMatch((await foreignReport.json()).report, /limited/);

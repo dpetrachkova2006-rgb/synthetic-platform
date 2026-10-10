@@ -59,7 +59,8 @@ export async function generatePDF(s: Study): Promise<Buffer> {
   paragraph(`В отчёте: главные результаты, диаграммы и темы, развёрнутая интерпретация, метод и источники.${data.quotes.length ? ' Полные ответы приведены в приложении.' : ''}`,MUTED);
   heading('01','Главные результаты',true);
   if(data.preliminary)card('Предварительный материал',`Включено ${data.included.length} из ${s.selectedIds.length} выбранных участников. Незавершённые интервью исключены.`);
-  if(data.survey.length)for(const insight of data.insights.slice(0,3))card(insight.title,insight.text);
+  if(data.analysisInsights.length)for(const insight of data.analysisInsights){label(insight.title,insight.finding);paragraph(insight.finding);for(const f of insight.facts)paragraph(`${f.title}: ${f.rows.map(r=>`${r.label} — ${r.count} из ${r.total}`).join('; ')}.`,MUTED);for(const q of insight.quotes)quote(quoteExcerpt(q.quote,300),`Участник №${q.respondentId}`);}
+  else if(data.survey.length)for(const insight of data.insights.slice(0,3))card(insight.title,insight.text);
   else if(data.themes.length)for(const theme of data.themes.slice(0,3))card(theme.title,theme.interpretation);
   else for(const insight of data.insights)card(insight.title,insight.text);
   paragraph('Сводка помогает увидеть основные результаты; ниже приведены их распределения, основания и развёрнутые пояснения.',MUTED);

@@ -35,6 +35,7 @@ export function mixedEvidence(s: Study, questionId: string) {
 export function extendedReportSections(s: Study) {
   const data = makeReportData(s);
   const sections: { title: string; paragraphs: string[] }[] = [];
+  if(data.analysisInsights.length)return [...data.analysisInsights.map(i=>({title:i.title,paragraphs:[i.finding+' '+i.explanation,...i.facts.map(f=>`Основание: ${f.title}. ${f.rows.map(r=>`${r.label}: ${r.count} из ${r.total} (${percentText(r.count,r.total)})`).join('; ')}.`),...(i.quotes.length?[`В интервью этот вывод опирается на слова ${[...new Set(i.quotes.map(q=>q.respondentId))].map(id=>`участника №${id}`).join(', ')}. Дословные цитаты представлены в начале отчёта; полные ответы сохранены в приложении.`]:[]),i.nextStep]})),{title:'Границы интерпретации',paragraphs:['Выводы описывают синтетические ответы и помогают сформулировать проверяемые гипотезы. Сравнения относятся к указанным группам, а интервью раскрывают отдельные случаи. Полученные связи не устанавливают причинность и не подтверждают распространённость мнений в реальном населении.']}];
   if (data.survey.length) sections.push({ title: 'Что показывают ответы анкеты', paragraphs: data.survey.map(q => {
     const total = q.distribution.reduce((n, r) => n + r.count, 0);
     const sorted = [...q.distribution].sort((a, b) => b.count - a.count);

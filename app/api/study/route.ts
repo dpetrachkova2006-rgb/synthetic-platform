@@ -1,3 +1,4 @@
+import { analysisFacts, INSIGHT_INSTRUCTION, type AnalysisFact } from '../../lib/reportInsights';
 import { aiFetch, getAIKey, getAIModel, getAIConfig, getInterviewModel, supportsStrictJSON } from "../../lib/aiProvider";
 import { compactProfile, estimateTokens, interviewOutputLimit, SURVEY_BATCH } from '../../lib/researchEconomy';
 import { NextResponse } from 'next/server';
@@ -32,14 +33,14 @@ export async function POST(request: Request) {
         const sample = body.evidence.sample;
         if (!record(sample) || !Number.isInteger(sample.size) || Number(sample.size) < 1 || !Array.isArray(body.evidence.quantitative) || !body.evidence.quantitative.length || body.evidence.quantitative.length > 10 || !body.evidence.quantitative.every(q => record(q) && text(q.text,1000) && Array.isArray(q.distribution) && q.distribution.length >= 2 && q.distribution.every(d=>record(d)&&text(d.option,200)&&Number.isInteger(d.count)&&Number(d.count)>=0) && q.distribution.reduce((n,d)=>n+Number(d.count),0)===sample.size) || body.evidence.interviews.length) return NextResponse.json({ error: 'Для анализа нужна завершённая количественная анкета.' }, { status: 400 });
       } else if (!body.evidence.interviews.length || !body.evidence.interviews.every(i => record(i) && Array.isArray(i.transcript) && i.transcript.length > 0)) return NextResponse.json({ error: 'Отчёт требует завершённых интервью.' }, { status: 400 });
-      if (quantitativeOnly) return NextResponse.json({ researchId: body.researchId, report: verifiedReportText(body.evidence as ReportEvidence), themes: [], usage: { tokens: 0, estimated: false } });
+
       instruction = 'Выдели темы и мотивы только по переданным завершённым интервью. Интерпретируй только приведённые цитаты, без новых фактов, чисел и количественных обобщений. Отдельные случаи не характеризуют всю выборку. Не придумывай мотивы, события или цитаты. Пиши по-русски. Верни JSON {"report":"","themes":[{"title":"тема без цифр","interpretation":"осторожная интерпретация цитат без чисел","quotes":[{"respondentId":1,"question":"точный вопрос","quote":"дословный фрагмент ответа"}]}]}. Числовую сводку и ограничения исследования добавит сервер.';
     } else return NextResponse.json({ error: 'Неизвестное действие.' }, { status: 400 });
     if (Array.isArray(body.respondents)) body.respondents = body.respondents.map(p => compactProfile(p as Parameters<typeof compactProfile>[0]));
     if (record(body.respondent)) body.respondent = compactProfile(body.respondent as Parameters<typeof compactProfile>[0], 'interview');
     const selectedModel = body.action === 'interviewBatch' || body.action === 'interview' ? getInterviewModel() : getAIModel('');
     // Include room for Russian answers, exact question text, JSON and model reasoning.
-    const outputLimit = body.action === 'report' ? (getAIConfig().provider === 'groq' ? 1000 : 6500) : body.action === 'interviewBatch' ? interviewOutputLimit(body.questions as string[], getAIConfig().provider === 'groq') : body.action === 'survey' ? Math.max(1200, Math.min(6000, 500 + (body.respondents as unknown[]).length * (body.questionnaire as {id:string;options:string[]}[]).reduce((n,q)=>n+estimateTokens(q.id)+Math.max(...q.options.map(estimateTokens))+25,20))) : 2000;
+    const outputLimit = body.action === 'report' ? (getAIConfig().provider === 'groq' ? 3200 : 6500) : body.action === 'interviewBatch' ? interviewOutputLimit(body.questions as string[], getAIConfig().provider === 'groq') : body.action === 'survey' ? Math.max(1200, Math.min(6000, 500 + (body.respondents as unknown[]).length * (body.questionnaire as {id:string;options:string[]}[]).reduce((n,q)=>n+estimateTokens(q.id)+Math.max(...q.options.map(estimateTokens))+25,20))) : 2000;
     if (estimateTokens(body) + outputLimit > Number(process.env.AI_MAX_REQUEST_TOKENS || 60000)) return NextResponse.json({ error: 'Слишком большой объём данных для одного запроса. Сократите вопросы или историю интервью.' }, { status: 413 });
     let responseFormat: Record<string, unknown> = { type: 'json_object' };
     if (body.action === 'survey' && supportsStrictJSON()) {
@@ -50,21 +51,19 @@ export async function POST(request: Request) {
       const questions = body.questions as string[];
       responseFormat = { type: 'json_schema', json_schema: { name: 'interview_turns', strict: true, schema: { type: 'object', properties: { turns: { type: 'array', minItems: questions.length, maxItems: questions.length, items: { type: 'object', properties: { question: { type: 'string', enum: questions }, answer: { type: 'string', description: 'Ответ участника только на русском языке. Английские слова и выражения переведи естественными русскими словами.', pattern: russianAnswerPattern(`${body.topic} ${body.question} ${questions.join(' ')}`) } }, required: ['question','answer'], additionalProperties: false } } }, required: ['turns'], additionalProperties: false } } };
     }
-    if (body.action === 'report' && record(body.evidence) && body.evidence.type !== 'quantitative' && getAIConfig().provider === 'groq' && supportsStrictJSON()) {
-      quoteLibrary = reportQuoteLibrary(body.evidence.interviews as unknown[]);
-      const languagePattern = russianAnswerPattern(`${body.topic} ${body.question}`);
-      responseFormat = { type: 'json_schema', json_schema: { name: 'interview_report', strict: true, schema: { type: 'object', properties: {
-        report: { type: 'string', maxLength: 0 },
-        themes: { type: 'array', maxItems: quoteLibrary.length ? 3 : 0, items: { type: 'object', properties: {
-          title: { type: 'string', minLength: 1, maxLength: 160, pattern: languagePattern.replace('[^A-Za-z]', '[^A-Za-z0-9]') },
-          interpretation: { type: 'string', minLength: 1, maxLength: 220, pattern: languagePattern.replace('[^A-Za-z]', '[^A-Za-z0-9]') },
-          quotes: { type: 'array', minItems: 1, maxItems: 1, items: { type: 'object', properties: { quoteId: { type: 'integer', enum: quoteLibrary.length ? quoteLibrary.map(q => q.quoteId) : [0] } }, required: ['quoteId'], additionalProperties: false } }
-        }, required: ['title', 'interpretation', 'quotes'], additionalProperties: false } }
-      }, required: ['report', 'themes'], additionalProperties: false } } };
-      instruction = instruction.replace('{"respondentId":1,"question":"точный вопрос","quote":"дословный фрагмент ответа"}', '{"quoteId":1}').replace('исключённые ID', 'номера исключённых участников').replace('с ID респондента', 'с номером участника') + '\nВсе разделы и формулировки отчёта только по-русски. Не выводи служебные названия полей, код исследования или вопросы вроде q1. Участника называй «участник №…». Ответ в transcript представлен последовательными segments: это полный исходный ответ, а не разные реплики. Для quotes выбирай только quoteId из этих segments: текст цитаты подставит сервер. Не придумывай номера цитат. interpretation описывает смысл цитат без цифр.';
+    let facts: AnalysisFact[] = [];
+    if (body.action === 'report' && record(body.evidence)) {
+      const comparisons=body.evidence.comparisons;
+      if(comparisons!==undefined && (!Array.isArray(comparisons)||comparisons.length>18||!comparisons.every(f=>record(f)&&text(f.id,200)&&text(f.title,2400)&&Array.isArray(f.rows)&&f.rows.length>=2&&f.rows.length<=12&&f.rows.every(r=>record(r)&&text(r.label,200)&&Number.isInteger(r.count)&&Number.isInteger(r.total)&&Number(r.total)>0&&Number(r.count)>=0&&Number(r.count)<=Number(r.total))))) return NextResponse.json({error:'Некорректные данные сравнения.'},{status:400});
+      facts=analysisFacts(body.evidence as Parameters<typeof analysisFacts>[0]);
+      quoteLibrary=reportQuoteLibrary(body.evidence.interviews as unknown[]);
+      instruction=INSIGHT_INSTRUCTION+'\nПолные transcript представлены последовательными segments одного ответа. Для цитат используй только quoteId из segments: дословный текст подставит сервер.';
+      if(supportsStrictJSON(selectedModel)) {
+        const prose={type:'string',minLength:1,maxLength:1200,pattern:russianAnswerPattern(`${body.topic} ${body.question}`).replace('[^A-Za-z]','[^A-Za-z0-9]')};
+        const refs={type:'array',maxItems:3,items:{type:'integer',enum:quoteLibrary.length?quoteLibrary.map(q=>q.quoteId):[0]}};
+        responseFormat={type:'json_schema',json_schema:{name:'research_analysis',strict:true,schema:{type:'object',properties:{report:{type:'string',maxLength:0},themes:{type:'array',maxItems:quoteLibrary.length?3:0,items:{type:'object',properties:{title:prose,interpretation:prose,quotes:{type:'array',minItems:1,maxItems:3,items:{type:'object',properties:{quoteId:refs.items},required:['quoteId'],additionalProperties:false}}},required:['title','interpretation','quotes'],additionalProperties:false}},insights:{type:'array',minItems:1,maxItems:5,items:{type:'object',properties:{title:{...prose,maxLength:160},finding:prose,explanation:prose,nextStep:prose,factIds:{type:'array',maxItems:3,items:{type:'string',enum:facts.length?facts.map(f=>f.id):['none']}},quoteIds:refs},required:['title','finding','explanation','nextStep','factIds','quoteIds'],additionalProperties:false}}},required:['report','themes','insights'],additionalProperties:false}}};
+      }
     }
-    if (body.action === 'report' && getAIConfig().provider === 'groq') instruction += '\nДо трёх самых важных тем; interpretation не более одного короткого предложения без цифр; к каждой теме выбери одну цитату. Полные таблицы, интервью и источники показываются в отчёте отдельно.';
-    if (body.action === 'report') instruction += '\nЧисла, проценты, характеристики выборки и количественные выводы вычисляет сервер из сохранённых данных. Не пересчитывай и не повторяй их. Сосредоточься на themes: содержании проверяемых цитат и осторожной интерпретации без количественных обобщений. report оставь пустой строкой: итоговый текст соберёт сервер.';
     const apiKey = getAIKey();
     if (!apiKey) return NextResponse.json({ error: 'На сервере не настроен API-ключ.' }, { status: 503 });
     let modelInput: unknown = body;
@@ -73,11 +72,11 @@ export async function POST(request: Request) {
       // Complete history is retained for consistency and the original transcript stays unchanged.
       modelInput = { topic: body.topic, question: body.question, respondent: body.respondent, survey: body.survey, history: body.history, questions: body.questions };
     }
-    if (body.action === 'report' && getAIConfig().provider === 'groq' && record(body.evidence)) {
+    if (body.action === 'report' && record(body.evidence)) {
       const evidence = body.evidence;
       const quantitative = Array.isArray(evidence.quantitative) ? evidence.quantitative.filter(record) : [];
       // Technical identifiers have no analytical value and must not leak into the prose.
-      modelInput = { topic: body.topic, question: body.question, evidence: { selectionReason: evidence.selectionReason,
+      modelInput = { topic: body.topic, question: body.question, evidence: { type: evidence.type, facts, selectionReason: evidence.selectionReason,
         interviews: (evidence.interviews as unknown[]).map(i => record(i) ? { ...i,
           transcript: quoteLibrary && record(i.respondent) && Array.isArray(i.transcript) ? i.transcript.map(t => record(t) && typeof t.question === 'string' && typeof t.answer === 'string' ? { question: t.question, segments: reportTranscriptSegments(Number((i.respondent as Record<string, unknown>).id), t.question, t.answer, quoteLibrary) } : t) : i.transcript,
           survey: record(i.survey) && record(i.survey.answers) ? quantitative.map(q => ({ question: q.text, answer: (i.survey as { answers: Record<string, unknown> }).answers[String(q.id)] })) : i.survey } : i)
@@ -122,7 +121,16 @@ export async function POST(request: Request) {
     if (body.action === 'report' && result.themes !== undefined) {
       const evidence = body.evidence as { interviews: { respondent: { id: number }; transcript: { question: string; answer: string }[] }[] };
       if (!Array.isArray(result.themes) || result.themes.length > 12 || !result.themes.every(theme => record(theme) && text(theme.title,160) && text(theme.interpretation,1500) && !/\d|[%％]/.test(theme.title + theme.interpretation) && !answerLanguageIssue(theme.title + ' ' + theme.interpretation, languageContext) && Array.isArray(theme.quotes) && theme.quotes.length > 0 && theme.quotes.length <= 10 && theme.quotes.every(q => record(q) && Number.isInteger(q.respondentId) && text(q.question,2000) && text(q.quote,6000) && evidence.interviews.some(i => i.respondent?.id === q.respondentId && i.transcript.some(t => t.question === q.question && t.answer.includes(q.quote as string)))))) throw new Error('Темы отчёта содержат непроверяемую цитату или неподтверждённые числа. Повторите анализ.');
-      result.report = verifiedReportText(body.evidence as ReportEvidence, result.themes as { title: string; interpretation: string }[]);
+      if (body.action === 'report') {
+        if(!Array.isArray(result.insights)||!result.insights.length||result.insights.length>5)throw new Error('Модель не вернула аналитические выводы. Повторите анализ.');
+        result.insights=result.insights.map(i=>{
+          if(!record(i)||!['title','finding','explanation','nextStep'].every(k=>text(i[k],k==='title'?160:1200))||/[\d%％]/.test(String(i.title)+i.finding+i.explanation+i.nextStep)||answerLanguageIssue([i.title,i.finding,i.explanation,i.nextStep].join(' '),languageContext)||!Array.isArray(i.factIds)||!Array.isArray(i.quoteIds)||i.factIds.length+i.quoteIds.length===0||i.factIds.length>3||i.quoteIds.length>3)throw new Error('Выводы не подкреплены проверяемыми данными. Повторите анализ.');
+          const sources=i.factIds.map(id=>facts.find(f=>f.id===id));const quotes=i.quoteIds.map(id=>quoteLibrary?.find(q=>q.quoteId===id));
+          if(sources.some(f=>!f)||quotes.some(q=>!q))throw new Error('Не удалось проверить основания вывода. Повторите анализ.');
+          return {...i,facts:sources,quotes:quotes.map(q=>({respondentId:q!.respondentId,question:q!.question,quote:q!.quote}))};
+        });
+      }
+      result.report = verifiedReportText(body.evidence as ReportEvidence, result.themes as { title: string; interpretation: string }[]) + (Array.isArray(result.insights)?'\n\n'+result.insights.map(i=>[i.title,i.finding,i.explanation,i.nextStep].join('\n')).join('\n\n'):'');
     }
     return NextResponse.json({ researchId: body.researchId, ...result, model: completion.model ?? selectedModel, usage: { tokens: completion.usage?.total_tokens ?? estimateTokens(body) + estimateTokens(result), estimated: !completion.usage?.total_tokens } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error && error.name === 'TimeoutError' ? 'Время генерации истекло. Повторите попытку.' : error instanceof Error ? error.message : 'Ошибка генерации.' }, { status: 502 }); }

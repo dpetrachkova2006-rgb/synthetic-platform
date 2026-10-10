@@ -7,7 +7,7 @@ export function reportQuoteLibrary(interviews: unknown[]): ReportQuote[] {
     if (!Number.isInteger(item?.respondent?.id) || !Array.isArray(item?.transcript)) continue;
     for (const turn of item.transcript) {
       if (typeof turn.question !== 'string' || typeof turn.answer !== 'string') continue;
-      const sentences = turn.answer.split(/(?<=[.!?])\s+/u).filter(s => s.trim()).slice(0, 3);
+      const sentences = turn.answer.split(/(?<=[.!?])\s+/u).filter(s => s.trim()).slice(0, 8);
       for (const sentence of sentences) {
         // Cutting a long sentence preserves an exact substring without invented punctuation.
         const quote = sentence.trim().slice(0, 500);

@@ -1,4 +1,5 @@
 'use client';
+import { analysisSignature } from '../lib/reportInsights';
 
 import { compactProfile, estimateTokens, INTERVIEW_BATCH, nextGroqInterviewBatch, surveyBatchSize } from '../lib/researchEconomy';
 import { providerRetryDelay, waitForProvider } from '../lib/providerPause';
@@ -214,7 +215,7 @@ function StudyContent() {
       if (study.type === 'quantitative' ? !surveyComplete(study) : preliminary ? study.type !== 'qualitative' || !completedInterviewIds(study).length : !interviewsComplete(study) || (study.type === 'mixed' && !surveyComplete(study))) throw new Error('Сначала завершите необходимые интервью и опрос.');
       const includedIds = preliminary ? completedInterviewIds(study) : study.selectedIds;
       const data = await api(study, { action: 'report', evidence: buildReportEvidence(study, includedIds) });
-      commit({ ...study, usage: currentStudy.current?.usage, report: data.report, themes: data.themes ?? [], reportRespondentIds: includedIds });
+      commit({ ...study, usage: currentStudy.current?.usage, report: data.report, themes: data.themes ?? [], analysisInsights: data.insights ?? [], analysisSignature: analysisSignature(study, study.type === 'quantitative' ? [] : includedIds), reportRespondentIds: includedIds });
     });
   }
   const currentQuestion = study?.questionnaire.find(q => q.id === filter.questionId) ?? study?.questionnaire[0];

@@ -1,3 +1,4 @@
+import { savedInsights } from './reportInsights';
 import { answerLanguageIssue } from './respondentLanguage';
 import { buildReportEvidence, completedInterviewIds, distributions, type Study } from './study';
 import { reportIncludedIds } from './studyFlow';
@@ -9,7 +10,7 @@ export function makeReportData(s:Study) {
   const themes=(s.themes??[]).filter(theme=>!/[\d%％]/.test(theme.title+theme.interpretation)&&!answerLanguageIssue(theme.title+' '+theme.interpretation,`${s.topic} ${s.question}`)&&theme.quotes.length>0&&theme.quotes.every(q=>included.includes(q.respondentId)&&quotes.some(t=>t.respondentId===q.respondentId&&t.question===q.question&&t.quote.includes(q.quote))));
   const insights=survey.map(q=>{const total=q.distribution.reduce((n,r)=>n+r.count,0),max=Math.max(...q.distribution.map(r=>r.count));const leaders=q.distribution.filter(r=>r.count===max).map(r=>r.option);return {title:q.text,text:`${leaders.length>1?'Равная наибольшая доля':'Самый частый ответ'}: «${leaders.join('», «')}». ${max} из ${total} ответов (${(max/total*100).toLocaleString('ru-RU',{maximumFractionDigits:1})}%).`};});
   if(!insights.length)insights.push({title:'Материал для анализа',text:s.type==='quantitative'?`Сохранено ${quotes.length} развёрнутых ответов из ${s.population.length} профилей. Распределение позиций ниже описывает гипотезу генерации, а не ответы анкеты.`:`Сохранённые ответы: ${quotes.length}. Смоделированные интервью в отчёте: ${included.length}. ${themes.length?'Темы ниже опираются на дословные фрагменты ответов.':'Ответы сгруппированы по вопросам; тематическая интерпретация появится после анализа.'}`});
-  return {included,survey,quotes,themes,insights,preliminary:s.type!=='quantitative'&&included.length<s.selectedIds.length};
+  return {analysisInsights:savedInsights(s,s.type==='quantitative'?[]:included),included,survey,quotes,themes,insights,preliminary:s.type!=='quantitative'&&included.length<s.selectedIds.length};
 }
 export function profileFrequencies(s:Study,key:'gender'|'city'|'education') {
   const counts=new Map<string,number>();for(const p of s.population){const value=p[key]||'Не указано';counts.set(value,(counts.get(value)??0)+1);}return [...counts].sort((a,b)=>b[1]-a[1]);
@@ -19,7 +20,7 @@ export function profileFrequencies(s:Study,key:'gender'|'city'|'education') {
 export function reportNarrative(s: Study) {
   if (s.type === 'quantitative' && s.workflow !== 'survey') return s.report;
   const data = makeReportData(s);
-  return verifiedReportText(buildReportEvidence(s, data.included), data.themes);
+  return verifiedReportText(buildReportEvidence(s, data.included), data.themes) + (data.analysisInsights.length?'\n\n'+data.analysisInsights.map(i=>[i.title,i.finding,i.explanation,i.nextStep].join('\n')).join('\n\n'):'');
 }
 
 /** Preserve every analytical section of earlier quantitative reports in exports. */
