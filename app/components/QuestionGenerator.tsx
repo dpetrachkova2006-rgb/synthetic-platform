@@ -22,6 +22,8 @@ export default function QuestionGenerator({ projectId, mode, topic: initialTopic
   const inFlight = useRef(false);
   const preview = useRef<HTMLDivElement | null>(null);
   const maxCount = Math.min(10, Math.max(0, (mode === 'survey' ? 10 : 30) - existing.length));
+  // A preview must be applied or dismissed before the research can start.
+  useEffect(() => { onBusyChange(busy || questions.length > 0); }, [busy, questions.length, onBusyChange]);
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
 
   useEffect(() => {
@@ -53,7 +55,7 @@ export default function QuestionGenerator({ projectId, mode, topic: initialTopic
     if (!topic.trim() || !brief.trim()) { setError('Укажите тему и что хотите узнать.'); return; }
     const requestedCount = Math.min(count, maxCount);
     if (!Number.isInteger(requestedCount) || requestedCount < 1) { setError('Удалите лишние вопросы, чтобы добавить новые.'); return; }
-    inFlight.current = true; controller.current = new AbortController(); setBusy(true); onBusyChange(true); setError('');
+    inFlight.current = true; controller.current = new AbortController(); setBusy(true); setError('');
     try {
       const response = await fetch('/api/generate-questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.current.signal, body: JSON.stringify({ mode, topic, brief, count: requestedCount, existing, surveyQuestions }) });
       const data = await response.json().catch(() => { throw new Error('Сервис не ответил вовремя. Попробуйте ещё раз.'); });
@@ -61,7 +63,7 @@ export default function QuestionGenerator({ projectId, mode, topic: initialTopic
       setQuestions(validateQuestionDrafts(data.questions, mode));
       requestAnimationFrame(() => { preview.current?.scrollIntoView({ block: 'nearest' }); preview.current?.focus({ preventScroll: true }); });
     } catch (e) { setError(e instanceof Error && e.name === 'AbortError' ? 'Генерация остановлена. Ваши вопросы сохранены.' : e instanceof Error ? e.message : 'Не удалось подготовить вопросы.'); }
-    finally { inFlight.current = false; setBusy(false); onBusyChange(false); }
+    finally { inFlight.current = false; setBusy(false); }
   }
   function apply() {
     try {
@@ -78,6 +80,7 @@ export default function QuestionGenerator({ projectId, mode, topic: initialTopic
     </div>
     {maxCount === 0 && <p className="mt-3 text-xs text-gray-600">Достигнуто максимальное число вопросов. Можно отредактировать существующие.</p>}
     {message && <p role="status" className="mt-3 text-sm text-blue-800">{message}</p>}
+    {questions.length > 0 && !busy && <p className="mt-3 text-xs text-blue-800">Перед запуском добавьте черновик или нажмите «Не использовать».</p>}
     {open && <div id={id} className="mt-5 space-y-5">
       <fieldset disabled={busy || disabled} className="grid min-w-0 gap-4 sm:grid-cols-[1fr_130px]">
         <label className="text-sm font-semibold">Тема<input className="app-input mt-2" maxLength={1000} value={topic} onChange={e => setTopic(e.target.value)} /></label>
@@ -97,7 +100,7 @@ export default function QuestionGenerator({ projectId, mode, topic: initialTopic
           <textarea id={`${id}-q-${i}`} className="app-input mt-2 min-h-20" maxLength={1000} value={q.text} onChange={e => setQuestions(questions.map((item, index) => index === i ? { ...item, text: e.target.value } : item))}/>
           {mode === 'survey' && <label className="mt-3 block text-xs font-semibold text-gray-600">Варианты ответа через точку с запятой<textarea className="app-input mt-2 min-h-20 text-sm" value={q.options.join('; ')} onChange={e => setQuestions(questions.map((item, index) => index === i ? { ...item, options: e.target.value.split(';') } : item))}/></label>}
         </div>)}</fieldset>
-        <button type="button" className="app-button inline-flex min-h-12 items-center gap-2 px-5 text-sm" disabled={busy || disabled} onClick={apply}>Добавить в {mode === 'survey' ? 'анкету' : 'интервью'} <ArrowRight size={16}/></button>
+        <div className="flex flex-wrap items-center gap-4"><button type="button" className="app-button inline-flex min-h-12 items-center gap-2 px-5 text-sm" disabled={busy || disabled} onClick={apply}>Добавить в {mode === 'survey' ? 'анкету' : 'интервью'} <ArrowRight size={16}/></button><button type="button" className="text-sm font-semibold text-gray-600 underline" disabled={busy || disabled} onClick={() => { setQuestions([]); setError(''); }}>Не использовать</button></div>
       </div>}
     </div>}
     {error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
