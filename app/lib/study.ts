@@ -12,7 +12,7 @@ export type Study = {
   themes?: { title: string; interpretation: string; quotes: { respondentId: number; question: string; quote: string }[] }[];
   sources?: { title: string; organization: string; date: string; geography: string; population: string; version: string; retrievedAt: string; application: string; url: string }[];
   legacy?: Record<string, string>;
-  budget?: { maxRequests: number; maxTokens: number }; usage?: { requests: number; tokens: number; estimated?: boolean };
+  budget?: { maxRequests: number; maxTokens: number }; usage?: { requests: number; tokens: number; estimated?: boolean; models?: string[] };
   version: 1; researchId: string; type: ResearchType; topic: string; question: string;
   createdAt: string; stage: number; population: SyntheticRespondent[];
   questionnaire: SurveyQuestion[]; responses: SurveyResponse[];

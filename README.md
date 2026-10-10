@@ -47,6 +47,8 @@ GROQ_MODEL=openai/gpt-oss-120b
 
 Create a key at https://console.groq.com/keys and choose the Free plan. Configure the same values in Netlify and deploy again. Every route uses the configured model, including older routes that previously referenced retired models. Questions, survey answers and interview batches use strict structured outputs on supported models. A schema rejection can trigger one repair request on the same Groq model; independent server validation still rejects foreign speech or invalid data. Report quotations are copied on the server from exact transcript excerpts chosen by reference. Groq interviews normally generate two ordered answers per request, with a smaller output allowance and the full original history. Long contexts use a single-question batch. Saved answers are skipped on resume. The browser respects explicit provider pauses of up to fifteen minutes and never switches to a paid provider. Quotas apply to the whole account, and large studies can still exceed them. Check your actual account limits at https://console.groq.com/settings/limits.
 
+Groq interviews use `openai/gpt-oss-20b` by default. Set `GROQ_INTERVIEW_MODEL=openai/gpt-oss-120b` to retain the larger model. Analysis uses `GROQ_MODEL`, with one attempt on 20B when the larger model returns a daily quota error. Minute limits and oversized requests do not trigger model fallback. Both models use the same account and its applicable quotas. The response records the actual serving model, which is saved in study usage metadata.
+
 ### OpenRouter configuration
 
 All generation API routes share `app/lib/aiProvider.ts`. To enable OpenRouter, set **server-only** environment variables locally and in Netlify:

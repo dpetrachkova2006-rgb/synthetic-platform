@@ -91,6 +91,7 @@ test('optimized interviews retain all context, return ordered answers and reject
     assert.deepEqual(context.questions, body.questions);
     assert.equal(context.respondent.id, 1);
     assert.equal(Object.keys(context).at(-1), 'questions');
+    assert.equal(sent.model, 'openai/gpt-oss-20b');
     assert.equal(context.researchId, undefined);
     assert.ok(sent.max_completion_tokens >= 2500 && sent.max_completion_tokens < 4000);
     assert.equal(JSON.stringify(body), snapshot);
@@ -99,6 +100,39 @@ test('optimized interviews retain all context, return ordered answers and reject
   } finally {
     global.fetch = original.fetch;
     for (const name of ['AI_PROVIDER', 'GROQ_API_KEY']) if (original[name] === undefined) delete process.env[name]; else process.env[name] = original[name];
+  }
+});
+
+test('daily analysis fallback is bounded to one smaller Groq model and uses the same cancellation signal', async () => {
+  const original = { fetch: global.fetch, AI_PROVIDER: process.env.AI_PROVIDER, GROQ_API_KEY: process.env.GROQ_API_KEY, GROQ_MODEL: process.env.GROQ_MODEL };
+  process.env.AI_PROVIDER = 'groq'; process.env.GROQ_API_KEY = 'test-only'; process.env.GROQ_MODEL = 'openai/gpt-oss-120b';
+  const provider = load(root + '/app/lib/aiProvider.ts');
+  const signal = new AbortController().signal;
+  const sent = [];
+  try {
+    global.fetch = async (_, options) => {
+      assert.equal(options.signal, signal);
+      sent.push(JSON.parse(options.body));
+      return sent.length === 1 ? Response.json({ error: { message: 'on tokens per day (TPD)' } }, { status: 429 }) : Response.json({ model: 'openai/gpt-oss-20b', choices: [{ message: { content: '{}' } }] });
+    };
+    const options = { signal, body: JSON.stringify({ messages: [{ role: 'user', content: 'Проанализируй цитаты.' }], response_format: { type: 'json_schema', json_schema: { name: 'report' } } }) };
+    const result = await provider.aiFetch('', options, { smallerModelOnDailyQuota: true });
+    assert.equal(result.status, 200);
+    assert.deepEqual(sent.map(p => p.model), ['openai/gpt-oss-120b', 'openai/gpt-oss-20b']);
+    assert.deepEqual(sent[0].messages, sent[1].messages);
+    assert.deepEqual(sent[0].response_format, sent[1].response_format);
+    sent.length = 0;
+    global.fetch = async (_, options) => { sent.push(JSON.parse(options.body)); return Response.json({ error: { message: 'on tokens per minute (TPM)' } }, { status: 429 }); };
+    assert.equal((await provider.aiFetch('', options, { smallerModelOnDailyQuota: true })).status, 429);
+    assert.equal(sent.length, 1);
+    sent.length = 0;
+    global.fetch = async (_, options) => { sent.push(JSON.parse(options.body)); return Response.json({ error: { message: 'on tokens per day (TPD)' } }, { status: 429 }); };
+    assert.equal((await provider.aiFetch('', options, { smallerModelOnDailyQuota: true })).status, 429);
+    assert.equal(sent.length, 2);
+    await assert.rejects(provider.aiFetch('', options, { model: 'unknown-paid-model' }), /Недопустимая модель/);
+  } finally {
+    global.fetch = original.fetch;
+    for (const name of ['AI_PROVIDER', 'GROQ_API_KEY', 'GROQ_MODEL']) if (original[name] === undefined) delete process.env[name]; else process.env[name] = original[name];
   }
 });
 

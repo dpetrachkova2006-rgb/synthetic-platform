@@ -16,8 +16,16 @@ export function getAIModel(_legacyModel: string) {
   void _legacyModel;
   return getAIConfig().model;
 }
-export function supportsStrictJSON() {
-  const { provider, model } = getAIConfig();
+export function getInterviewModel() {
+  const config = getAIConfig();
+  if (config.provider !== 'groq') return config.model;
+  const model = process.env.GROQ_INTERVIEW_MODEL || 'openai/gpt-oss-20b';
+  if (!['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(model)) throw new Error('Неизвестная модель интервью Groq.');
+  return model;
+}
+export function supportsStrictJSON(modelOverride?: string) {
+  const { provider, model: configuredModel } = getAIConfig();
+  const model = modelOverride ?? configuredModel;
   return (provider === 'openrouter' && model.startsWith('nvidia/nemotron-3-super')) ||
     (provider === 'groq' && ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'].includes(model));
 }
@@ -31,8 +39,10 @@ function invalidPatternWords(value: unknown, schema: PatternSchema): string[] {
   if (typeof value === 'object' && value !== null) return Object.entries(value).flatMap(([key, item]) => invalidPatternWords(item, schema.properties?.[key] ?? {}));
   return [];
 }
-export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise<Response> {
-  const config = getAIConfig();
+export async function aiFetch(_legacyUrl: string, options: RequestInit, task: { model?: string; smallerModelOnDailyQuota?: boolean } = {}): Promise<Response> {
+  const baseConfig = getAIConfig();
+  if (task.model && task.model !== baseConfig.model && (baseConfig.provider !== 'groq' || !['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(task.model))) throw new Error('Недопустимая модель для этого этапа.');
+  const config = { ...baseConfig, model: task.model ?? baseConfig.model };
   if (!config.apiKey) throw new Error('Не настроен серверный ключ сервиса генерации.');
   const headers = new Headers(options.headers);
   headers.set('Authorization', `Bearer ${config.apiKey}`);
@@ -75,6 +85,17 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit): Promise
   }
   const signal = options.signal || AbortSignal.timeout(55000);
   let response = await fetch(config.url, { ...options, headers, body: JSON.stringify(payload), signal });
+  if (config.provider === 'groq' && task.smallerModelOnDailyQuota && payload.model !== 'openai/gpt-oss-20b' && response.status === 429) {
+    const failure = await response.clone().json().catch(() => null);
+    const quota = groqQuota(typeof failure?.error?.message === 'string' ? failure.error.message : '', response.headers.get('retry-after'));
+    if (quota.kind === 'tokens-day' || quota.kind === 'requests-day') {
+      // One alternate-model attempt on the same Groq account; no new keys or paid service.
+      payload.model = 'openai/gpt-oss-20b';
+      payload.reasoning_effort = 'low';
+      payload.include_reasoning = false;
+      response = await fetch(config.url, { ...options, headers, body: JSON.stringify(payload), signal });
+    }
+  }
   if (config.provider === 'groq' && response.status === 400 && payload.response_format?.type === 'json_schema') {
     const failure = await response.clone().json().catch(() => null);
     if (failure?.error?.code === 'json_validate_failed' && typeof failure.error.failed_generation === 'string' && failure.error.failed_generation.length <= 40000) {

@@ -147,7 +147,7 @@ function StudyContent() {
     if (!response.ok) throw new Error(data.error || 'Ошибка генерации.');
     if (data.researchId !== current.researchId) throw new Error('Ответ относится к другому проекту.');
     const last = currentStudy.current ?? current;
-    commit({ ...last, usage: { requests: last.usage?.requests ?? 1, tokens: (last.usage?.tokens ?? 0) - reserved + data.usage.tokens, estimated: !!usage.estimated || data.usage.estimated } });
+    commit({ ...last, usage: { requests: last.usage?.requests ?? 1, tokens: (last.usage?.tokens ?? 0) - reserved + data.usage.tokens, estimated: !!usage.estimated || data.usage.estimated, models: [...new Set([...(last.usage?.models ?? []), ...(typeof data.model === 'string' ? [data.model] : [])])] } });
     return data;
   }
   function draft(nextTopic: string, nextQuestion: string) { localStorage.setItem('study_form_draft_' + type, JSON.stringify({ topic: nextTopic, question: nextQuestion })); window.dispatchEvent(new Event('research-saved')); }
