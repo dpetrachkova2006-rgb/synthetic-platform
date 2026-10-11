@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const failure = await response.json().catch(() => null);
       const message = failure?.error?.message;
+      if (failure?.error?.code === 'json_validate_failed') return NextResponse.json({ error: 'Модель вернула некорректный черновик. Нажмите «Подготовить вопросы» ещё раз — существующие вопросы сохранены.' }, { status: 502 });
       return NextResponse.json({ error: typeof message === 'string' && /OpenRouter|Groq/.test(message) ? message : response.status === 429 ? 'Достигнут лимит генерации. Попробуйте позже или добавьте вопросы вручную.' : 'Сервис сейчас недоступен. Попробуйте ещё раз или добавьте вопросы вручную.' }, { status: response.status === 429 ? 429 : 502 });
     }
     const completion = await response.json();

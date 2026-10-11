@@ -1,5 +1,5 @@
 export const maxDuration = 300;
-import { analysisFacts, INSIGHT_INSTRUCTION, type AnalysisFact } from '../../lib/reportInsights';
+import { analysisFacts, INSIGHT_INSTRUCTION, unsupportedMajority, type AnalysisFact } from '../../lib/reportInsights';
 import { aiFetch, getAIKey, getAIModel, getAIConfig, getInterviewModel, supportsStrictJSON } from "../../lib/aiProvider";
 import { compactProfile, estimateTokens, interviewOutputLimit, SURVEY_BATCH } from '../../lib/researchEconomy';
 import { NextResponse } from 'next/server';
@@ -144,12 +144,14 @@ export async function POST(request: Request) {
           if(!record(i)||!['title','finding','explanation','nextStep'].every(k=>text(i[k],k==='title'?160:1200))||/[\d%％]/.test(String(i.title)+i.finding+i.explanation+i.nextStep)||answerLanguageIssue([i.title,i.finding,i.explanation,i.nextStep].join(' '),languageContext)||!Array.isArray(i.factIds)||!Array.isArray(i.quoteIds)||i.factIds.length+i.quoteIds.length===0||i.factIds.length>3||i.quoteIds.length>3)throw new Error('Выводы не подкреплены проверяемыми данными. Повторите анализ.');
           const sources=i.factIds.map(id=>facts.find(f=>f.id===id));const quotes=i.quoteIds.map(id=>quoteLibrary?.find(q=>q.quoteId===id));
           if(sources.some(f=>!f)||quotes.some(q=>!q))throw new Error('Не удалось проверить основания вывода. Повторите анализ.');
+          if(unsupportedMajority([i.title,i.finding,i.explanation].join(' '),sources as AnalysisFact[]))throw new Error('Модель назвала большинство без подтверждения в анкете. Повторите анализ — ответы сохранены.');
           return {...i,facts:sources,quotes:quotes.map(q=>({respondentId:q!.respondentId,question:q!.question,quote:q!.quote}))};
         });
       }
       if(result.commentary!==undefined){
         const c=result.commentary;
         if(!record(c)||!['overview','interpretation','implications'].every(k=>text(c[k],1800)&&!/[\d%％]/.test(String(c[k]))&&!answerLanguageIssue(String(c[k]),languageContext))||!Array.isArray(c.insightIndexes)||!c.insightIndexes.length||c.insightIndexes.length>5||!c.insightIndexes.every(i=>Number.isInteger(i)&&Number(i)>=0&&Number(i)<(result.insights as unknown[]).length))throw new Error('Комментарий содержит непроверяемый вывод или текст на другом языке. Повторите анализ.');
+        if(unsupportedMajority([c.overview,c.interpretation,c.implications].join(' '),facts))throw new Error('Комментарий обобщает ответы без подтверждения в анкете. Повторите анализ — ответы сохранены.');
       }
       result.report = verifiedReportText(body.evidence as ReportEvidence, result.themes as { title: string; interpretation: string }[]) + (Array.isArray(result.insights)?'\n\n'+result.insights.map(i=>[i.title,i.finding,i.explanation,i.nextStep].join('\n')).join('\n\n'):'');
     }

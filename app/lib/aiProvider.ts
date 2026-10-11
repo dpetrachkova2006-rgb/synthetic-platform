@@ -85,6 +85,11 @@ export async function aiFetch(_legacyUrl: string, options: RequestInit, task: { 
   }
   const signal = options.signal || AbortSignal.timeout(55000);
   let response = await fetch(config.url, { ...options, headers, body: JSON.stringify(payload), signal });
+  // A temporary Groq server failure must not interrupt a saved interview batch.
+  // Retry once with the same model, payload and cancellation deadline.
+  if (config.provider === 'groq' && [500, 502, 503, 504].includes(response.status)) {
+    response = await fetch(config.url, { ...options, headers, body: JSON.stringify(payload), signal });
+  }
   if (config.provider === 'groq' && task.smallerModelOnDailyQuota && payload.model !== 'openai/gpt-oss-20b' && response.status === 429) {
     const failure = await response.clone().json().catch(() => null);
     const quota = groqQuota(typeof failure?.error?.message === 'string' ? failure.error.message : '', response.headers.get('retry-after'));

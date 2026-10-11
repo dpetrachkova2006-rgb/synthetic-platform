@@ -233,3 +233,29 @@ test('saved reports use counted statistics and never reuse fabricated model perc
   assert.doesNotMatch(reportNarrative(project), /99%/);
   assert.equal(reportNarrative({ ...project, workflow: undefined }), project.report); // Preserve the separate legacy report format.
 });
+
+test('temporary Groq server failures retry once and preserve cancellation; quota errors do not retry', async () => {
+  const original = { fetch: global.fetch, provider: process.env.AI_PROVIDER, key: process.env.GROQ_API_KEY };
+  process.env.AI_PROVIDER = 'groq'; process.env.GROQ_API_KEY = 'test-only';
+  const provider = load(root + '/app/lib/aiProvider.ts');
+  const signal = new AbortController().signal;
+  try {
+    for (const status of [500, 502, 503, 504]) {
+      const calls = [];
+      global.fetch = async (_, options) => { calls.push(options); return calls.length === 1 ? Response.json({ error: { message: 'temporary' } }, { status }) : Response.json({ ok: true }); };
+      assert.equal((await provider.aiFetch('', { signal, body: JSON.stringify({ messages: [] }) })).status, 200);
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].body, calls[1].body);
+      assert.equal(calls[1].signal, signal);
+    }
+    for (const status of [503, 429, 401]) {
+      let calls = 0;
+      global.fetch = async () => { calls++; return Response.json({ error: { message: 'temporary' } }, { status }); };
+      assert.equal((await provider.aiFetch('', { signal, body: JSON.stringify({ messages: [] }) })).status, status);
+      assert.equal(calls, status === 503 ? 2 : 1);
+    }
+  } finally {
+    global.fetch = original.fetch;
+    for (const [name, value] of [['AI_PROVIDER', original.provider], ['GROQ_API_KEY', original.key]]) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+});

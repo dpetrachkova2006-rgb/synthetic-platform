@@ -74,3 +74,15 @@ test('interview commentary retains verified quotes even when a synthesis exists 
  assert.equal(interviewCommentary({...qualitative,themes:[theme]})[0].interpretation,theme.interpretation);
  assert.deepEqual(interviewCommentary({...qualitative,themes:[{...theme,quotes:[{...q,quote:'Выдуманный ответ'}]}]}),[]);
 });
+
+test('a tied answer and a subgroup do not support a majority of respondents',()=>{
+  const prose='Большинство опрошенных выбирают удобные остановки.';
+  const fact={id:'survey:q',title:'Что важнее?',rows:[{label:'Остановки',count:1,total:2},{label:'Цена',count:1,total:2}]};
+  assert.equal(analysis.unsupportedMajority(prose,[fact]),true);
+  assert.equal(analysis.unsupportedMajority(prose,[{...fact,id:'group:q:age:0',rows:[{label:'До 30 лет',count:1,total:1}]}]),true);
+  assert.equal(analysis.unsupportedMajority(prose,[{...fact,rows:[{label:'Остановки',count:2,total:3}]}]),false);
+  assert.equal(analysis.unsupportedMajority('Участник описывает удобную остановку.',[]),false);
+  const tied={...project,population:project.population.slice(0,2),responses:project.responses.slice(0,2),report:'Сохранённый отчёт',analysisInsights:[{...insight,finding:prose,factIds:['survey:q'],facts:[fact],quotes:[]}]};
+  tied.analysisSignature=analysis.analysisSignature(tied,[]);
+  assert.deepEqual(analysis.savedInsights(tied,[]),[]);
+});

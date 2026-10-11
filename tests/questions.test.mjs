@@ -77,6 +77,8 @@ test('question API validates generation, language, errors and quantitative evide
     upstream({ questions: surveyDrafts }); assert.equal((await api.POST(request({ ...body, existing: [surveyDrafts[0].text] }))).status, 502);
     global.fetch = async () => Response.json({ error: { message: 'rate limit' } }, { status: 429 });
     const limited = await api.POST(request(body)); assert.equal(limited.status, 429); assert.match((await limited.json()).error, /лимит/);
+    global.fetch = async () => Response.json({ error: { code: 'json_validate_failed', message: 'internal provider validation detail' } }, { status: 400 });
+    const badDraft = await api.POST(request(body)); assert.equal(badDraft.status,502); assert.match((await badDraft.json()).error,/некорректный черновик/);
     global.fetch = async () => Response.json({ choices: [{ finish_reason: 'length', message: { content: '{"questions":[' } }] });
     assert.match((await (await api.POST(request(body))).json()).error, /прервалась/);
     const insight={title:'Автобус входит в повседневные поездки',finding:'В сохранённой анкете выбран автобус.',explanation:'Других участников пока нет, поэтому сравнить привычки нельзя.',nextStep:'Спросить, в каких ситуациях автобус заменяют другим транспортом.',factIds:['survey:q'],quoteIds:[]};
