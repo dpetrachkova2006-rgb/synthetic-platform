@@ -22,3 +22,15 @@ export function reportCommentary(s:Study) {
   });
   return [];
 }
+
+/** Show interpretation beside its verified interview evidence, including saved reports. */
+export function interviewCommentary(s:Study) {
+  if(s.type==='quantitative')return [];
+  const data=makeReportData(s);
+  const insights=data.analysisInsights.filter(insight=>insight.quotes.length);
+  if(insights.length)return insights.map(insight=>({
+    title:insight.title,interpretation:insight.explanation,nextStep:insight.nextStep,
+    quotes:insight.quotes.filter((q,i,all)=>all.findIndex(other=>other.respondentId===q.respondentId&&other.question===q.question&&other.quote===q.quote)===i)
+  }));
+  return data.themes.map(theme=>({title:theme.title,interpretation:theme.interpretation,nextStep:'',quotes:theme.quotes}));
+}

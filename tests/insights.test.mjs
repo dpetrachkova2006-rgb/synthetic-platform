@@ -60,3 +60,17 @@ test('older survey and theme reports get visible commentary without invented cau
  assert.equal(reportCommentary(qualitative)[0].paragraphs[0],qualitative.themes[0].interpretation);assert.match(reportCommentary(qualitative)[0].paragraphs[1],/Мне важны прямые маршруты/);
  assert.deepEqual(reportCommentary({...qualitative,themes:[{...qualitative.themes[0],quotes:[{respondentId:1,question:'Почему?',quote:'Выдуманная цитата'}]}]}),[]);
 });
+
+test('interview commentary retains verified quotes even when a synthesis exists and excludes stale evidence',()=>{
+ const {interviewCommentary}=load(root+'/app/lib/reportCommentary.ts');
+ const q={respondentId:1,question:'Почему?',quote:'Мне важны прямые маршруты.'};
+ const qualitative={...project,type:'qualitative',selectedIds:[1],guide:'Почему?',interviews:{1:[{question:q.question,answer:q.quote}]},themes:[]};
+ const saved={...qualitative,report:'Анализ',analysisSignature:analysis.analysisSignature(qualitative,[1]),analysisInsights:[{...insight,facts:[],factIds:[],quotes:[q,q]}],analysisCommentary:{overview:'Участник описывает опыт поездки.',interpretation:'Прямой маршрут облегчает поездку.',implications:'Стоит уточнить роль пересадок.',insightIndexes:[0]}};
+ const sections=interviewCommentary(saved);assert.equal(sections.length,1);assert.equal(sections[0].interpretation,insight.explanation);assert.deepEqual(sections[0].quotes,[q]);assert.equal(sections[0].nextStep,insight.nextStep);
+ assert.deepEqual(interviewCommentary({...saved,topic:'Другая тема'}),[]);
+ assert.deepEqual(interviewCommentary({...saved,analysisInsights:[{...saved.analysisInsights[0],quotes:[{...q,quote:'Выдуманный ответ'}]}]}),[]);
+ assert.deepEqual(interviewCommentary({...saved,type:'quantitative'}),[]);
+ const theme={title:'Пересадки',interpretation:'Прямой маршрут уменьшает сложность поездки в описанном случае.',quotes:[q]};
+ assert.equal(interviewCommentary({...qualitative,themes:[theme]})[0].interpretation,theme.interpretation);
+ assert.deepEqual(interviewCommentary({...qualitative,themes:[{...theme,quotes:[{...q,quote:'Выдуманный ответ'}]}]}),[]);
+});
