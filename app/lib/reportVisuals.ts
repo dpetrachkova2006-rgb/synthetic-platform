@@ -1,7 +1,7 @@
 import { makeReportData } from './reportData';
 import type { Study } from './study';
 
-export const REPORT_COLORS = ['#3154ff', '#18a999', '#9164d8', '#f0a33a', '#e56c86', '#6192b1', '#747c91', '#a89270', '#41756b', '#be6570', '#6262aa', '#b38b35'];
+export const REPORT_COLORS = ['#489de0', '#e96e68', '#929baa', '#70b7be', '#ae91c6', '#deb471', '#657e96', '#bdbfc8', '#599c85', '#c08b97', '#8184b3', '#b3a276'];
 export const percentText = (count: number, total: number) => `${(total ? count / total * 100 : 0).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`;
 
 /** Each cell means a verified source quote exists, not that other respondents disagreed. */

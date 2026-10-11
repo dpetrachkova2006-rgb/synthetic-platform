@@ -2,11 +2,12 @@ import PDFDocument from 'pdfkit';
 import path from 'node:path';
 import { guideQuestions, TYPE_LABELS, type Study } from './study';
 import { makeReportData, profileFrequencies, quoteExcerpt, reportNarrative } from './reportData';
+import { reportCommentary } from './reportCommentary';
 import { reportBlocker } from './studyFlow';
-import { ageDistribution, extendedReportSections, mixedEvidence, REPORT_COLORS, themeEvidence } from './reportVisuals';
+import { ageDistribution, extendedReportSections, mixedEvidence, percentText, REPORT_COLORS, themeEvidence } from './reportVisuals';
 export { reportBlocker } from './studyFlow';
 
-const BLUE = '#3154ff', INK = '#18202e', MUTED = '#667085', PALE = '#f4f6fc';
+const BLUE = '#489de0', INK = '#172333', MUTED = '#6c7b88', PALE = '#f2f7fb';
 export async function generatePDF(s: Study): Promise<Buffer> {
   const blocked = reportBlocker(s); if (blocked) throw new Error(blocked);
   const data = makeReportData(s);
@@ -21,7 +22,7 @@ export async function generatePDF(s: Study): Promise<Buffer> {
   function heading(number:string,title:string,newPage=false,reserve=170){if(newPage)doc.addPage();room(reserve);doc.font('bold').fontSize(9).fillColor(BLUE).text(`${number} / ИССЛЕДОВАТЕЛЬСКИЙ ОТЧЁТ`,left,doc.y,{width});doc.moveDown(.6);doc.font('bold').fontSize(22).fillColor(INK).text(title,left,doc.y,{width,lineGap:2});doc.moveDown(.65);}
   function label(text:string,nextText?:string){doc.font('regular').fontSize(10);const reserve=nextText?Math.min(bottom-120,doc.heightOfString(nextText,{width,lineGap:4})+32):110;doc.font('bold').fontSize(11);room(doc.heightOfString(text,{width})+reserve);doc.fillColor(INK).text(text,left,doc.y,{width,lineGap:3});doc.moveDown(.6);}
   function card(title:string,text:string){doc.font('bold').fontSize(11);const th=doc.heightOfString(title,{width:width-32,lineGap:3});doc.font('regular').fontSize(10);const bh=doc.heightOfString(text,{width:width-32,lineGap:4});const h=th+bh+38;
-    if(h>bottom-58){label(title);paragraph(text);return;}room(h+14);const y=doc.y;doc.roundedRect(left,y,width,h,12).fill(PALE);doc.rect(left,y+12,3,h-24).fill(BLUE);doc.font('bold').fontSize(11).fillColor(INK).text(title,left+16,y+15,{width:width-32,lineGap:3});doc.font('regular').fontSize(10).fillColor(MUTED).text(text,left+16,y+21+th,{width:width-32,lineGap:4});doc.y=y+h+14;
+    if(h>bottom-58){label(title);paragraph(text);return;}room(h+14);const y=doc.y;doc.roundedRect(left,y,width,h,6).fill(PALE);doc.rect(left,y+12,3,h-24).fill(BLUE);doc.font('bold').fontSize(11).fillColor(INK).text(title,left+16,y+15,{width:width-32,lineGap:3});doc.font('regular').fontSize(10).fillColor(MUTED).text(text,left+16,y+21+th,{width:width-32,lineGap:4});doc.y=y+h+14;
   }
   function quote(text:string,caption:string){card(`Участник ${caption}`,`«${text}»`);}
   function chartHeight(rows:{option:string;count:number}[]){doc.font('regular').fontSize(10);return 95+rows.reduce((n,row)=>n+doc.heightOfString(row.option,{width:width-108,lineGap:3})+28,0);}
@@ -29,11 +30,11 @@ export async function generatePDF(s: Study): Promise<Buffer> {
     for(const [index,row] of rows.entries()){doc.font('regular').fontSize(10);const textH=doc.heightOfString(row.option,{width:width-108,lineGap:3});const h=textH+28;if(doc.y+h>bottom){doc.addPage();label(`${title} — продолжение`);paragraph(caption,MUTED);}const y=doc.y;doc.fillColor(INK).text(row.option,left,y,{width:width-108,lineGap:3});const percent=base?row.count/base*100:0;doc.font('bold').text(`${percent.toLocaleString('ru-RU',{maximumFractionDigits:1})}% · ${row.count}`,left+width-103,y,{width:103,align:'right'});const by=y+textH+8;doc.roundedRect(left,by,width,7,3).fill('#e9edff');if(percent>0)doc.roundedRect(left,by,Math.max(7,width*percent/100),7,3).fill(REPORT_COLORS[index % REPORT_COLORS.length]);doc.y=y+h;}doc.moveDown();
   }
   function donut(rows:{option:string;count:number}[],base:number){
-    room(190);const y=doc.y,cx=left+80,cy=y+76,r=58;let angle=-Math.PI/2;
-    doc.circle(cx,cy,r).lineWidth(18).strokeColor('#e9edff').stroke();
-    rows.forEach((row,i)=>{const span=base?row.count/base*Math.PI*2:0;if(span){const steps=Math.max(2,Math.ceil(span*24));doc.moveTo(cx+r*Math.cos(angle),cy+r*Math.sin(angle));for(let step=1;step<=steps;step++){const a=angle+span*step/steps;doc.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));}doc.lineWidth(18).strokeColor(REPORT_COLORS[i % REPORT_COLORS.length]).stroke();angle+=span;}});
-    doc.lineWidth(1);doc.font('bold').fontSize(23).fillColor(INK).text(String(base),cx-40,cy-18,{width:80,align:'center'});doc.font('regular').fontSize(8).fillColor(MUTED).text('ответов',cx-40,cy+14,{width:80,align:'center'});
-    doc.font('bold').fontSize(14).fillColor(INK).text('Распределение ответов',left+182,y+24,{width:width-182});doc.font('regular').fontSize(10).fillColor(MUTED).text('Цвета соответствуют вариантам на диаграмме ниже. Каждая доля рассчитана от сохранённых ответов на этот вопрос.',left+182,y+56,{width:width-182,lineGap:4});doc.y=y+164;
+    room(235);const y=doc.y,cx=left+width/2,cy=y+94,r=74;let angle=-Math.PI/2;
+    doc.circle(cx,cy,r).lineWidth(28).strokeColor('#edf1f5').stroke();
+    rows.forEach((row,i)=>{const fraction=base?row.count/base:0,span=fraction*Math.PI*2;if(span){const steps=Math.max(2,Math.ceil(span*28));doc.moveTo(cx+r*Math.cos(angle),cy+r*Math.sin(angle));for(let step=1;step<=steps;step++){const a=angle+span*step/steps;doc.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));}doc.lineWidth(28).strokeColor(REPORT_COLORS[i%REPORT_COLORS.length]).stroke();if(fraction>=.07){const mid=angle+span/2;doc.font('bold').fontSize(9).fillColor(INK).text(percentText(row.count,base),cx+r*Math.cos(mid)-22,cy+r*Math.sin(mid)-5,{width:44,align:'center'});}angle+=span;}});
+    doc.lineWidth(1);doc.font('bold').fontSize(String(base).length>5?22:26).fillColor(INK).text(String(base),cx-45,cy-20,{width:90,align:'center'});doc.font('regular').fontSize(9).fillColor(MUTED).text('ответов',cx-45,cy+18,{width:90,align:'center'});doc.y=y+202;
+    paragraph('Цвета соответствуют вариантам ответа на диаграмме ниже.',MUTED);
   }
   function evidenceMap(){
     const themes=themeEvidence(s);if(!themes.length)return;
@@ -44,19 +45,22 @@ export async function generatePDF(s: Study): Promise<Buffer> {
       header();themes.forEach((theme,index)=>{doc.font('regular').fontSize(9);const h=Math.max(32,doc.heightOfString(theme.title,{width:nameWidth-20,lineGap:3})+18);if(doc.y+h>bottom){doc.addPage();header();}const y=doc.y;doc.rect(left,y,width,h).fill(index%2===0?PALE:'#ffffff');doc.fillColor(INK).text(theme.title,left+10,y+9,{width:nameWidth-20,lineGap:3});ids.forEach((id,i)=>{if(theme.respondentIds.includes(id))doc.circle(left+nameWidth+(i+.5)*cell,y+h/2,4).fill(BLUE);else doc.moveTo(left+nameWidth+(i+.5)*cell-3,y+h/2).lineTo(left+nameWidth+(i+.5)*cell+3,y+h/2).lineWidth(1).strokeColor('#b8c0cd').stroke();});doc.y=y+h+2;});doc.moveDown();
     }
   }
-  // Обложка задаёт ту же иерархию, что и экранный отчёт.
-  doc.font('bold').fontSize(27);const titleHeight=doc.heightOfString(s.topic,{width:width-40,lineGap:4});doc.font('regular').fontSize(11);const questionHeight=doc.heightOfString(s.question,{width:width-40,lineGap:4});const coverHeight=Math.min(540,Math.max(290,titleHeight+questionHeight+178));
-  doc.roundedRect(left,58,width,coverHeight,18).fill('#172443');
-  doc.font('bold').fontSize(9).fillColor('#b9c8ff').text('SYNTHETIC PLATFORM',left+20,80,{width:width-40});
-  doc.font('regular').fontSize(10).fillColor('#d9e2ff').text(TYPE_LABELS[s.type],left+20,117,{width:width-40});
-  doc.font('bold').fontSize(27).fillColor('#ffffff').text(s.topic,left+20,151,{width:width-40,lineGap:4});
-  doc.y+=15;doc.font('regular').fontSize(11).fillColor('#d9e2ff').text(s.question,left+20,doc.y,{width:width-40,lineGap:4});
-  doc.font('bold').fontSize(9).fillColor('#b9c8ff').text(data.preliminary?'ПРЕДВАРИТЕЛЬНЫЙ ОТЧЁТ':'ИССЛЕДОВАТЕЛЬСКИЙ ОТЧЁТ',left+20,58+coverHeight-34,{width:width-40});
-  doc.y=58+coverHeight+22;
-  const metrics=[[String(s.population.length),'Профилей'],[String(s.type==='qualitative'?data.included.length:s.responses.length),s.type==='qualitative'?'Интервью':'Анкет'],[String(s.type==='qualitative'?data.quotes.length:s.type==='quantitative'?(s.workflow==='survey'?data.survey.length:data.quotes.length):data.included.length),s.type==='qualitative'?'Сохранённых ответов':s.type==='quantitative'?(s.workflow==='survey'?'Вопросов в анкете':'Развёрнутых ответов'):'Интервью']] as const;
-  room(78);const my=doc.y,mw=(width-20)/3;metrics.forEach(([value,text],i)=>{const x=left+i*(mw+10);doc.roundedRect(x,my,mw,72,10).fill(PALE);doc.font('bold').fontSize(23).fillColor(INK).text(value,x+14,my+10,{width:mw-28});doc.font('regular').fontSize(9).fillColor(MUTED).text(text,x+14,my+44,{width:mw-28});});doc.y=my+92;
-  paragraph(`Дата: ${new Date(s.createdAt).toLocaleDateString('ru-RU')}. Ответы смоделированы — люди не опрашивались. Отчёт помогает уточнять гипотезы и готовить реальное исследование.`,MUTED);
-  paragraph(`В отчёте: главные результаты, диаграммы и темы, развёрнутая интерпретация, метод и источники.${data.quotes.length ? ' Полные ответы приведены в приложении.' : ''}`,MUTED);
+  // Светлая обложка и паспорт исследовательской публикации.
+  doc.roundedRect(left,58,width,390,22).fill('#e1f0fc');
+  doc.font('bold').fontSize(9).fillColor('#397cac').text('ПЛАТФОРМА СИНТЕТИЧЕСКИХ РЕСПОНДЕНТОВ',left+24,83,{width:width-48});
+  doc.font('regular').fontSize(10).fillColor(MUTED).text(TYPE_LABELS[s.type],left+24,123,{width:width-48});
+  const coverTitle=quoteExcerpt(s.topic,180),coverQuestion=quoteExcerpt(s.question,240);let coverSize=27;
+  function coverTextHeight(){doc.font('bold').fontSize(coverSize);const titleH=doc.heightOfString(coverTitle,{width:width-48,lineGap:3});doc.font('regular').fontSize(11);return titleH+doc.heightOfString(coverQuestion,{width:width-48,lineGap:4})+24;}
+  while(coverSize>18&&coverTextHeight()>235)coverSize--;
+  doc.font('bold').fontSize(coverSize).fillColor(INK).text(coverTitle,left+24,155,{width:width-48,lineGap:3});
+  doc.moveDown(.7);doc.font('regular').fontSize(11).fillColor(INK).text(coverQuestion,left+24,doc.y,{width:width-48,lineGap:4});
+  doc.font('regular').fontSize(9).fillColor(MUTED).text('Синтетические данные. Люди не опрашивались.',left+24,414,{width:width-48});
+  doc.y=478;
+  const method=s.type==='quantitative'?'Моделирование ответов на анкету':s.type==='qualitative'?'Моделирование глубинных интервью':'Анкета и глубинные интервью с теми же участниками';
+  label('Выборка');paragraph(`${s.population.length} профилей.${s.type!=='qualitative'?` Сохранено ${s.responses.length} анкет.`:''}${s.type!=='quantitative'?` Завершено ${data.included.length} интервью.`:''}`);
+  label('Метод');paragraph(method);
+  label('Дата');paragraph(new Date(s.createdAt).toLocaleDateString('ru-RU'));
+  paragraph(`В отчёте: главные выводы, диаграммы с пояснениями, аналитический комментарий, метод и источники.${data.quotes.length?' Полные ответы приведены в приложении.':''}`,MUTED);
   heading('01','Главные результаты',true);
   if(data.preliminary)card('Предварительный материал',`Включено ${data.included.length} из ${s.selectedIds.length} выбранных участников. Незавершённые интервью исключены.`);
   if(data.analysisInsights.length)for(const insight of data.analysisInsights){label(insight.title,insight.finding);paragraph(insight.finding);for(const f of insight.facts)paragraph(`${f.title}: ${f.rows.map(r=>`${r.label} — ${r.count} из ${r.total}`).join('; ')}.`,MUTED);for(const q of insight.quotes)quote(quoteExcerpt(q.quote,300),`Участник №${q.respondentId}`);}
@@ -64,8 +68,8 @@ export async function generatePDF(s: Study): Promise<Buffer> {
   else if(data.themes.length)for(const theme of data.themes.slice(0,3))card(theme.title,theme.interpretation);
   else for(const insight of data.insights)card(insight.title,insight.text);
   paragraph('Сводка помогает увидеть основные результаты; ниже приведены их распределения, основания и развёрнутые пояснения.',MUTED);
-  heading('02','Визуальные результаты',false,data.survey.length?570:240);
-  for(const q of data.survey){const base=q.distribution.reduce((n,r)=>n+r.count,0);room(Math.min(620,210+chartHeight(q.distribution)));label(q.text);donut(q.distribution,base);chart('Варианты ответа',q.distribution,base);}
+  heading('02','Визуальные результаты',false,data.survey.length?610:240);
+  for(const q of data.survey){const base=q.distribution.reduce((n,r)=>n+r.count,0);room(Math.min(620,255+chartHeight(q.distribution)));label(q.text);donut(q.distribution,base);chart('Варианты ответа',q.distribution,base);const insight=data.insights.find(i=>i.title===q.text);if(insight)paragraph(insight.text);}
   if(s.type==='quantitative'&&!data.survey.length){paragraph('Позиции профилей описывают гипотезу при генерации группы и не являются результатами анкеты.',MUTED);chart('Позиции профилей',[...new Set(s.population.map(p=>p.opinion))].map(option=>({option,count:s.population.filter(p=>p.opinion===option).length})),s.population.length,`База: ${s.population.length} профилей. Это гипотеза генерации.`);}
   evidenceMap();
   for(const theme of data.themes){label(theme.title);paragraph(theme.interpretation);for(const q of theme.quotes)quote(quoteExcerpt(q.quote),`№${q.respondentId} · ${q.question}`);}
@@ -73,6 +77,7 @@ export async function generatePDF(s: Study): Promise<Buffer> {
   if(s.type==='mixed'&&data.themes.length){heading('03','Опрос и интервью: связь этапов',false,340);paragraph('Сопоставление строится по одним и тем же участникам. Для каждого ответа анкеты показаны темы, подтверждённые цитатами интервью этой группы.',MUTED);for(const q of data.survey){label(q.text);for(const group of mixedEvidence(s,q.id))card(`Ответ «${group.option}»: темы интервью`,`${group.respondentIds.map(id=>`№${id}`).join(', ')}\n${group.themes.length?group.themes.map(t=>`${t.title} (${t.respondentIds.map(id=>`№${id}`).join(', ')})`).join('\n'):'Темы для этих участников ещё не выделены.'}`);}}
   const prose=extendedReportSections(s);doc.font('regular').fontSize(10);const firstHeight=doc.heightOfString(prose[0]?.paragraphs[0]??'',{width,lineGap:4});
   heading('04','Развёрнутые пояснения',false,Math.min(620,firstHeight+150));
+  const commentary=reportCommentary(s);if(s.analysisCommentary&&commentary[0]?.title==='Общая картина')for(const section of commentary){label(section.title,section.paragraphs[0]);for(const text of section.paragraphs)paragraph(text);}
   for(const section of prose){label(section.title,section.paragraphs[0]);for(const text of section.paragraphs)paragraph(text);}
   if(s.type==='quantitative'&&s.workflow!=='survey'&&s.report){label('Сохранённый аналитический обзор');for(const block of reportNarrative(s).replace(/\*\*/g,'').split(/\n\s*\n/))paragraph(block.replace(/^#+\s*/gm,''));}
   heading('05','Выборка и метод');
