@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       instruction=INSIGHT_INSTRUCTION+'\nПолные transcript представлены последовательными segments одного ответа. Для цитат используй только quoteId из segments: дословный текст подставит сервер.';
       if(supportsStrictJSON(selectedModel)) {
         const prose={type:'string',minLength:1,maxLength:1200,pattern:russianAnswerPattern(`${body.topic} ${body.question}`).replace('[^A-Za-z]','[^A-Za-z0-9]')};
-        const refs={type:'array',maxItems:3,items:{type:'integer',enum:quoteLibrary.length?quoteLibrary.map(q=>q.quoteId):[0]}};
+        const refs={type:'array',minItems:quoteLibrary.length&&!facts.length?1:0,maxItems:quoteLibrary.length?3:0,items:{type:'integer',enum:quoteLibrary.length?quoteLibrary.map(q=>q.quoteId):[0]}};
         responseFormat = { type: 'json_schema', json_schema: { name: 'research_analysis', strict: true, schema: {
           type: 'object', properties: {
             report: { type: 'string', maxLength: 0 },
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
             }, required: ['title','interpretation','quotes'], additionalProperties: false } },
             insights: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'object', properties: {
               title: { ...prose, maxLength: 160 }, finding: prose, explanation: prose, nextStep: prose,
-              factIds: { type: 'array', maxItems: 3, items: { type: 'string', enum: facts.length ? facts.map(f=>f.id) : ['none'] } }, quoteIds: refs
+              factIds: { type: 'array', minItems: facts.length&&!quoteLibrary.length?1:0, maxItems: facts.length?3:0, items: { type: 'string', enum: facts.length ? facts.map(f=>f.id) : ['none'] } }, quoteIds: refs
             }, required: ['title','finding','explanation','nextStep','factIds','quoteIds'], additionalProperties: false } },
             commentary: { type: 'object', properties: {
               overview: { ...prose, maxLength: 1800 }, interpretation: { ...prose, maxLength: 1800 }, implications: { ...prose, maxLength: 1800 },

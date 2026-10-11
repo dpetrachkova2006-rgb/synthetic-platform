@@ -161,6 +161,10 @@ test('report analysis receives the complete answer once and still returns an exa
     assert.equal(r.status, 200);
     const input = JSON.parse(sent.messages.at(-1).content);
     assert.equal(input.evidence.availableQuotes, undefined);
+    const refs = sent.response_format.json_schema.schema.properties.insights.items.properties;
+    assert.equal(refs.factIds.maxItems,0);
+    assert.equal(refs.quoteIds.minItems,1);
+    assert.ok(refs.quoteIds.items.enum.every(id=>id>0));
     assert.equal(input.evidence.interviews[0].transcript[0].segments.map(s => s.text).join(''), answer);
     const result = await r.json();
     assert.deepEqual(result.themes[0].quotes, [{ respondentId: 7, question: 'Что важно?', quote: 'Мне важна точность доставки.' }]);

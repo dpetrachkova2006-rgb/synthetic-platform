@@ -93,6 +93,9 @@ test('question API validates generation, language, errors and quantitative evide
     assert.ok(countedData.usage.tokens > 0);
     assert.equal(calls, callsBeforeReport + 1);
     assert.equal(countedData.insights[0].facts[0].rows[0].count,1);
+    const refs=sent.response_format.json_schema.schema.properties.insights.items.properties;
+    assert.equal(refs.quoteIds.maxItems,0);
+    assert.equal(refs.factIds.minItems,1);
     assert.equal(JSON.parse(sent.messages[1].content).evidence.facts[0].title,'Ездите на автобусе?');
     upstream({ report: 'Данные имеют limited representativeness.', themes: [], insights:[insight] });
     const foreignReport = await studyApi.POST(request(reportBody));
