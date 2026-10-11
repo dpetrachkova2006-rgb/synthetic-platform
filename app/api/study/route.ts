@@ -1,3 +1,4 @@
+export const maxDuration = 300;
 import { analysisFacts, INSIGHT_INSTRUCTION, type AnalysisFact } from '../../lib/reportInsights';
 import { aiFetch, getAIKey, getAIModel, getAIConfig, getInterviewModel, supportsStrictJSON } from "../../lib/aiProvider";
 import { compactProfile, estimateTokens, interviewOutputLimit, SURVEY_BATCH } from '../../lib/researchEconomy';

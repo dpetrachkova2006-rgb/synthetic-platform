@@ -1,3 +1,4 @@
+export const maxDuration = 300;
 import { generatePDF } from '../../lib/pdfReport';
 import { validateLinks, type Study } from '../../lib/study';
 export const runtime = 'nodejs';

@@ -1,3 +1,4 @@
+export const maxDuration = 300;
 import { NextResponse } from 'next/server';
 import { aiFetch, getAIConfig, supportsStrictJSON } from '../../lib/aiProvider';
 import { answerLanguageIssue, russianAnswerPattern } from '../../lib/respondentLanguage';

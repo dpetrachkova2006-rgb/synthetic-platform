@@ -1,3 +1,4 @@
+export const maxDuration = 300;
 import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
 import { NextResponse } from "next/server";
 
