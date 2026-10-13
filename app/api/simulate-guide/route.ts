@@ -1,8 +1,14 @@
 export const maxDuration = 300;
-import { aiFetch, getAIKey, getInterviewModel } from "../../lib/aiProvider";
+import {
+  aiFetch,
+  getAIKey,
+  getInterviewModel,
+  supportsStrictJSON,
+} from "../../lib/aiProvider";
 import {
   assertRussianAnswer,
   RUSSIAN_ANSWER_INSTRUCTION,
+  russianAnswerPattern,
 } from "../../lib/respondentLanguage";
 import { NextResponse } from "next/server";
 
@@ -67,6 +73,55 @@ const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_GUIDE_LENGTH = 16_000;
+
+function simulationSchema(count: number, context: string) {
+  const string = {
+    type: "string",
+    minLength: 1,
+    pattern: russianAnswerPattern(context),
+  };
+  const object = (properties: Record<string, unknown>) => ({
+    type: "object",
+    properties,
+    required: Object.keys(properties),
+    additionalProperties: false,
+  });
+  const list = (items: unknown, minItems: number, maxItems: number) => ({
+    type: "array",
+    items,
+    minItems,
+    maxItems,
+  });
+  return object({
+    verdict: string,
+    respondents: list(
+      object({
+        name: string,
+        age: { type: "integer", minimum: 14, maximum: 100 },
+        city: string,
+        occupation: string,
+        description: string,
+      }),
+      count,
+      count,
+    ),
+    interviews: list(
+      object({
+        respondentName: string,
+        turns: list(object({ question: string, answer: string }), 1, 6),
+      }),
+      count,
+      count,
+    ),
+    findings: list(
+      object({ question: string, finding: string, recommendation: string }),
+      0,
+      12,
+    ),
+    workingQuestions: list(string, 0, 10),
+    problematicQuestions: list(string, 0, 10),
+  });
+}
 
 function cleanText(value: unknown, maxLength: number): string {
   if (typeof value !== "string") {
@@ -501,9 +556,19 @@ export async function POST(request: Request) {
             temperature: 0.75,
             top_p: 0.9,
             max_completion_tokens: respondentCount === 5 ? 4_500 : 3_200,
-            response_format: {
-              type: "json_object",
-            },
+            response_format: supportsStrictJSON(model)
+              ? {
+                  type: "json_schema",
+                  json_schema: {
+                    name: "guide_pilot",
+                    strict: true,
+                    schema: simulationSchema(
+                      respondentCount,
+                      `${topic} ${guide}`,
+                    ),
+                  },
+                }
+              : { type: "json_object" },
             messages: [
               {
                 role: "system",

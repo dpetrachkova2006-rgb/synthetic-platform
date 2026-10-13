@@ -79,6 +79,7 @@ export default function GuideTestPage() {
   const [simulation, setSimulation] = useState<SimulationResult | null>(null);
   const [simulationBusy, setSimulationBusy] = useState(false);
   const [simulationStatus, setSimulationStatus] = useState("");
+  const [simulationError, setSimulationError] = useState("");
   const [simulationVariant, setSimulationVariant] = useState("Исходный гайд");
   const simulationController = useRef<AbortController | null>(null);
   const simulationLock = useRef(false);
@@ -90,6 +91,7 @@ export default function GuideTestPage() {
     setError("");
     simulationController.current?.abort();
     setSimulation(null);
+    setSimulationError("");
     setAnalysis(null);
     setImprovedGuide("");
     setShowSimulationSetup(false);
@@ -206,6 +208,7 @@ export default function GuideTestPage() {
     const controller = new AbortController();
     simulationController.current = controller;
     setSimulationBusy(true);
+    setSimulationError("");
     setSimulationStatus("Проводим пробные интервью…");
     setError("");
     try {
@@ -244,7 +247,7 @@ export default function GuideTestPage() {
         simulationGuide === "improved" ? "Улучшенный гайд" : "Исходный гайд",
       );
     } catch (requestError) {
-      setError(
+      setSimulationError(
         requestError instanceof Error && requestError.name === "AbortError"
           ? "Тестирование остановлено. Текст гайда сохранён в форме."
           : requestError instanceof Error
@@ -261,6 +264,7 @@ export default function GuideTestPage() {
   function resetResults() {
     simulationController.current?.abort();
     setSimulation(null);
+    setSimulationError("");
     setAnalysis(null);
     setImprovedGuide("");
     setShowSimulationSetup(false);
@@ -387,7 +391,10 @@ export default function GuideTestPage() {
                 </label>
 
                 {error && (
-                  <div className="border border-red-200 bg-red-50 px-5 py-4 text-sm leading-6 text-red-700">
+                  <div
+                    role="alert"
+                    className="border border-red-200 bg-red-50 px-5 py-4 text-sm leading-6 text-red-700"
+                  >
                     {error}
                   </div>
                 )}
@@ -747,6 +754,14 @@ export default function GuideTestPage() {
                           Остановить тестирование
                         </button>
                       </div>
+                    )}
+                    {simulationError && (
+                      <p
+                        role="alert"
+                        className="mt-4 border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-700"
+                      >
+                        {simulationError}
+                      </p>
                     )}
                   </section>
                 )}
