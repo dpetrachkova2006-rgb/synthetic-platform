@@ -75,11 +75,12 @@ const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_GUIDE_LENGTH = 16_000;
 
 function simulationSchema(count: number, context: string) {
-  const string = {
+  const russianText = {
     type: "string",
     minLength: 1,
     pattern: russianAnswerPattern(context),
   };
+  const string = { $ref: "#/$defs/russianText" };
   const object = (properties: Record<string, unknown>) => ({
     type: "object",
     properties,
@@ -92,35 +93,38 @@ function simulationSchema(count: number, context: string) {
     minItems,
     maxItems,
   });
-  return object({
-    verdict: string,
-    respondents: list(
-      object({
-        name: string,
-        age: { type: "integer", minimum: 14, maximum: 100 },
-        city: string,
-        occupation: string,
-        description: string,
-      }),
-      count,
-      count,
-    ),
-    interviews: list(
-      object({
-        respondentName: string,
-        turns: list(object({ question: string, answer: string }), 1, 6),
-      }),
-      count,
-      count,
-    ),
-    findings: list(
-      object({ question: string, finding: string, recommendation: string }),
-      0,
-      12,
-    ),
-    workingQuestions: list(string, 0, 10),
-    problematicQuestions: list(string, 0, 10),
-  });
+  return {
+    ...object({
+      verdict: string,
+      respondents: list(
+        object({
+          name: string,
+          age: { type: "integer", minimum: 14, maximum: 100 },
+          city: string,
+          occupation: string,
+          description: string,
+        }),
+        count,
+        count,
+      ),
+      interviews: list(
+        object({
+          respondentName: string,
+          turns: list(object({ question: string, answer: string }), 1, 6),
+        }),
+        count,
+        count,
+      ),
+      findings: list(
+        object({ question: string, finding: string, recommendation: string }),
+        0,
+        12,
+      ),
+      workingQuestions: list(string, 0, 10),
+      problematicQuestions: list(string, 0, 10),
+    }),
+    $defs: { russianText },
+  };
 }
 
 function cleanText(value: unknown, maxLength: number): string {
