@@ -34,3 +34,25 @@ export function interviewCommentary(s:Study) {
   }));
   return data.themes.map(theme=>({title:theme.title,interpretation:theme.interpretation,nextStep:'',quotes:theme.quotes}));
 }
+
+/** Lead with verified analytical excerpts, then include other saved interview voices. */
+export function mainInterviewQuotes(s: Study) {
+  if (s.type === 'quantitative') return [];
+  const data = makeReportData(s);
+  const candidates = [
+    ...data.analysisInsights.flatMap(insight => insight.quotes.map(q => ({...q, theme: insight.title}))),
+    ...data.themes.flatMap(theme => theme.quotes.map(q => ({...q, theme: theme.title}))),
+    ...data.quotes.map(q => ({...q, theme: ''})),
+  ].filter(q => q.quote.trim() && data.quotes.some(source => source.respondentId === q.respondentId && source.question === q.question && source.quote.includes(q.quote)));
+  const selected: typeof candidates = [];
+  const add = (candidate: typeof candidates[number]) => {
+    if (selected.length >= 4 || selected.some(q => (q.respondentId === candidate.respondentId && q.question === candidate.question) || q.quote === candidate.quote)) return;
+    selected.push(candidate);
+  };
+  // Give different participants room before adding another answer from the same person.
+  for (const candidate of candidates) {
+    if (!selected.some(q => q.respondentId === candidate.respondentId)) add(candidate);
+  }
+  for (const candidate of candidates) add(candidate);
+  return selected;
+}

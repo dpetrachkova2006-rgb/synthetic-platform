@@ -24,3 +24,20 @@ test('chart bases, age boundaries and continuous PDF prose use only saved eviden
   assert.equal(visual.mixedEvidence({...s,type:'quantitative'},'q').length,0);
   assert.equal(visual.surveyGroups(s,'unknown').length,0);
 });
+const {mainInterviewQuotes}=load('app/lib/reportCommentary.ts');
+test('main interview quotes use verified saved excerpts and include different completed participants',()=>{
+  const highlights=mainInterviewQuotes(s);
+  assert.deepEqual(highlights.map(q=>q.respondentId),[7,91]);
+  assert.equal(highlights[0].quote,'Вечером долго ждать.');
+  assert.equal(highlights[0].theme,'Ожидание');
+  assert.ok(highlights.every(q=>s.interviews[q.respondentId].some(t=>t.question===q.question&&t.answer.includes(q.quote))));
+  const withoutAnalysis={...s,themes:[]};
+  assert.equal(mainInterviewQuotes(withoutAnalysis).length,2);
+  assert.equal(mainInterviewQuotes({...s,type:'quantitative'}).length,0);
+  const partial={...s,type:'qualitative',reportRespondentIds:[7],interviews:{7:s.interviews[7],91:[{question:'Почему?',answer:'I prefer the bus.'}]}};
+  assert.deepEqual(mainInterviewQuotes(partial).map(q=>q.respondentId),[7]);
+  const fake={...s,themes:[{...s.themes[0],quotes:[{respondentId:7,question:'Почему?',quote:'Выдуманный ответ.'}]}]};
+  assert.equal(mainInterviewQuotes(fake).some(q=>q.quote==='Выдуманный ответ.'),false);
+  const many={...s,type:'qualitative',themes:[],selectedIds:[7],reportRespondentIds:[7],guide:'Первый?\nВторой?\nТретий?\nЧетвёртый?\nПятый?',interviews:{7:['Первый?','Второй?','Третий?','Четвёртый?','Пятый?'].map((question,i)=>({question,answer:`Мне важен вариант ${i+1}.`}))}};
+  assert.equal(mainInterviewQuotes(many).length,4);
+});

@@ -3184,3 +3184,40 @@
     overflow: auto;
   }
 }
+
+/* Interview voices are visible immediately, including reports without theme analysis. */
+.synth-site .report-main-quotes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin: 24px 0;
+}
+.synth-site .report-main-quote-card {
+  margin: 0;
+  padding: 28px;
+  background: #111;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+.synth-site .report-main-quote-card:nth-child(even) { background: var(--electric); }
+.synth-site .report-main-quote-card blockquote { margin: 18px 0 24px; border: 0; padding: 0; }
+.synth-site .report-main-quote-card blockquote p {
+  font-size: clamp(18px, 2vw, 22px);
+  line-height: 1.55;
+  color: inherit;
+}
+.synth-site .report-main-quote-theme {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: inherit;
+}
+.synth-site .report-main-quote-card figcaption { font-size: 12px; line-height: 1.6; }
+.synth-site .report-main-quote-card figcaption span { display: block; margin-top: 6px; }
+.synth-site .report-main-quote-full { margin-top: 16px; font-size: 13px; line-height: 1.6; }
+.synth-site .report-main-quote-full summary { cursor: pointer; text-decoration: underline; }
+.synth-site .report-main-quote-full p { margin-top: 12px; color: inherit; }
+@media (max-width: 700px) {
+  .synth-site .report-main-quotes-grid { grid-template-columns: 1fr; gap: 16px; }
+  .synth-site .report-main-quote-card { padding: 22px; }
+}
