@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { providerRetryDelay, waitForProvider } from "../lib/providerPause";
 
 type GuideIssue = {
   question: string;
@@ -35,6 +36,27 @@ type ImproveResponse = {
 
 type SimulationGuideVersion = "original" | "improved";
 type SimulationCount = 3 | 5;
+type SimulationResult = {
+  verdict: string;
+  interviews: Array<{
+    respondent: {
+      id: number;
+      name: string;
+      age: number;
+      city: string;
+      occupation: string;
+      description: string;
+    };
+    turns: Array<{ question: string; answer: string }>;
+  }>;
+  findings: Array<{
+    question: string;
+    finding: string;
+    recommendation: string;
+  }>;
+  workingQuestions: string[];
+  problematicQuestions: string[];
+};
 
 export default function GuideTestPage() {
   const [title, setTitle] = useState("");
@@ -47,19 +69,27 @@ export default function GuideTestPage() {
   const [improvedGuide, setImprovedGuide] = useState("");
 
   const [showSimulationSetup, setShowSimulationSetup] = useState(false);
-  const [simulationCount, setSimulationCount] =
-    useState<SimulationCount>(3);
+  const [simulationCount, setSimulationCount] = useState<SimulationCount>(3);
   const [simulationGuide, setSimulationGuide] =
     useState<SimulationGuideVersion>("original");
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isImproving, setIsImproving] = useState(false);
   const [error, setError] = useState("");
+  const [simulation, setSimulation] = useState<SimulationResult | null>(null);
+  const [simulationBusy, setSimulationBusy] = useState(false);
+  const [simulationStatus, setSimulationStatus] = useState("");
+  const [simulationVariant, setSimulationVariant] = useState("Исходный гайд");
+  const simulationController = useRef<AbortController | null>(null);
+  const simulationLock = useRef(false);
+  useEffect(() => () => simulationController.current?.abort(), []);
 
   async function handleAnalyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setError("");
+    simulationController.current?.abort();
+    setSimulation(null);
     setAnalysis(null);
     setImprovedGuide("");
     setShowSimulationSetup(false);
@@ -68,7 +98,7 @@ export default function GuideTestPage() {
 
     if (!topic.trim() || !audience.trim() || !goal.trim() || !guide.trim()) {
       setError(
-        "Заполните тему, целевую аудиторию, цель исследования и текст гайда."
+        "Заполните тему, целевую аудиторию, цель исследования и текст гайда.",
       );
       return;
     }
@@ -94,7 +124,9 @@ export default function GuideTestPage() {
       const data = (await response.json()) as AnalyzeResponse;
 
       if (!response.ok || !data.result) {
-        throw new Error(data.error || "Не удалось провести тестирование гайда.");
+        throw new Error(
+          data.error || "Не удалось провести тестирование гайда.",
+        );
       }
 
       setAnalysis(data.result);
@@ -102,7 +134,7 @@ export default function GuideTestPage() {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Неизвестная ошибка тестирования гайда."
+          : "Неизвестная ошибка тестирования гайда.",
       );
     } finally {
       setIsAnalyzing(false);
@@ -138,7 +170,7 @@ export default function GuideTestPage() {
 
       if (!response.ok || !data.improvedGuide) {
         throw new Error(
-          data.error || "Не удалось сформировать улучшенный вариант гайда."
+          data.error || "Не удалось сформировать улучшенный вариант гайда.",
         );
       }
 
@@ -148,7 +180,7 @@ export default function GuideTestPage() {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Неизвестная ошибка улучшения гайда."
+          : "Неизвестная ошибка улучшения гайда.",
       );
     } finally {
       setIsImproving(false);
@@ -165,28 +197,70 @@ export default function GuideTestPage() {
     }
   }
 
-  function handleStartSimulation() {
+  async function handleStartSimulation() {
+    if (simulationLock.current) return;
     const selectedGuide =
-      simulationGuide === "improved" && improvedGuide
-        ? improvedGuide
-        : guide;
+      simulationGuide === "improved" && improvedGuide ? improvedGuide : guide;
 
-    console.log("Данные для тестирования на синтетической выборке:", {
-      title,
-      topic,
-      audience,
-      goal,
-      respondentCount: simulationCount,
-      guideVersion: simulationGuide,
-      guide: selectedGuide,
-    });
-
-    alert(
-      `Настройки готовы: ${simulationCount} респондента. На следующем шаге подключим API симуляции интервью.`
-    );
+    simulationLock.current = true;
+    const controller = new AbortController();
+    simulationController.current = controller;
+    setSimulationBusy(true);
+    setSimulationStatus("Проводим пробные интервью…");
+    setError("");
+    try {
+      const options = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          title,
+          topic,
+          audience,
+          goal,
+          respondentCount: simulationCount,
+          guideVersion: simulationGuide,
+          guide: selectedGuide,
+        }),
+      };
+      let response = await fetch("/api/simulate-guide", options);
+      const delay = providerRetryDelay(response);
+      if (delay !== null) {
+        await waitForProvider(delay, controller.signal, (remaining) =>
+          setSimulationStatus(
+            `Пауза сервиса · ${remaining} сек. Продолжим автоматически.`,
+          ),
+        );
+        setSimulationStatus("Продолжаем пробные интервью…");
+        response = await fetch("/api/simulate-guide", options);
+      }
+      const data = await response.json().catch(() => {
+        throw new Error("Не удалось получить результат. Попробуйте ещё раз.");
+      });
+      if (!response.ok || !data.result)
+        throw new Error(data.error || "Не удалось провести пробные интервью.");
+      setSimulation(data.result);
+      setSimulationVariant(
+        simulationGuide === "improved" ? "Улучшенный гайд" : "Исходный гайд",
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error && requestError.name === "AbortError"
+          ? "Тестирование остановлено. Текст гайда сохранён в форме."
+          : requestError instanceof Error
+            ? requestError.message
+            : "Не удалось провести тестирование.",
+      );
+    } finally {
+      simulationLock.current = false;
+      setSimulationBusy(false);
+      setSimulationStatus("");
+    }
   }
 
   function resetResults() {
+    simulationController.current?.abort();
+    setSimulation(null);
     setAnalysis(null);
     setImprovedGuide("");
     setShowSimulationSetup(false);
@@ -227,104 +301,107 @@ export default function GuideTestPage() {
             </p>
 
             <form onSubmit={handleAnalyze} className="mt-10 space-y-6">
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold">
-                  Название исследования
-                </span>
-
-                <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  className="w-full border border-gray-300 bg-white px-4 py-4 outline-none transition focus:border-blue-600"
-                  placeholder="Например, опыт использования городских сервисов"
-                  maxLength={180}
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold">
-                  Тема исследования *
-                </span>
-
-                <input
-                  value={topic}
-                  onChange={(event) => setTopic(event.target.value)}
-                  className="w-full border border-gray-300 bg-white px-4 py-4 outline-none transition focus:border-blue-600"
-                  placeholder="Что именно вы исследуете?"
-                  maxLength={500}
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold">
-                  Целевая аудитория *
-                </span>
-
-                <input
-                  value={audience}
-                  onChange={(event) => setAudience(event.target.value)}
-                  className="w-full border border-gray-300 bg-white px-4 py-4 outline-none transition focus:border-blue-600"
-                  placeholder="Кого планируете интервьюировать?"
-                  maxLength={500}
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold">
-                  Цель исследования *
-                </span>
-
-                <textarea
-                  value={goal}
-                  onChange={(event) => setGoal(event.target.value)}
-                  className="min-h-28 w-full resize-y border border-gray-300 bg-white px-4 py-4 outline-none transition focus:border-blue-600"
-                  placeholder="Какой результат должно дать интервью?"
-                  maxLength={1500}
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold">
-                  Текст гайда *
-                </span>
-
-                <textarea
-                  value={guide}
-                  onChange={(event) => setGuide(event.target.value)}
-                  className="min-h-[360px] w-full resize-y border border-gray-300 bg-white px-4 py-4 font-mono text-sm leading-7 outline-none transition focus:border-blue-600"
-                  placeholder={
-                    "Вставьте сюда вопросы и блоки гайда...\n\nБлок 1. Знакомство\n1. Расскажите немного о себе..."
-                  }
-                  maxLength={16000}
-                />
-
-                <div className="mt-2 flex justify-between gap-4 text-xs text-gray-400">
-                  <span>
-                    Для первого теста лучше использовать гайд до 16 000
-                    символов.
-                  </span>
-
-                  <span className="shrink-0">
-                    {guide.length} / 16 000
-                  </span>
-                </div>
-              </label>
-
-              {error && (
-                <div className="border border-red-200 bg-red-50 px-5 py-4 text-sm leading-6 text-red-700">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isAnalyzing || isImproving}
-                className="app-button min-h-16 w-full px-7 text-lg disabled:cursor-not-allowed disabled:opacity-60"
+              <fieldset
+                className="space-y-6"
+                disabled={isAnalyzing || isImproving || simulationBusy}
               >
-                {isAnalyzing
-                  ? "Тестируем гайд..."
-                  : "Провести тестирование →"}
-              </button>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold">
+                    Название исследования
+                  </span>
+
+                  <input
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                    className="w-full border border-gray-300 bg-white px-4 py-4 outline-none transition focus:border-blue-600"
+                    placeholder="Например, опыт использования городских сервисов"
+                    maxLength={180}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold">
+                    Тема исследования *
+                  </span>
+
+                  <input
+                    value={topic}
+                    onChange={(event) => setTopic(event.target.value)}
+                    className="w-full border border-gray-300 bg-white px-4 py-4 outline-none transition focus:border-blue-600"
+                    placeholder="Что именно вы исследуете?"
+                    maxLength={500}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold">
+                    Целевая аудитория *
+                  </span>
+
+                  <input
+                    value={audience}
+                    onChange={(event) => setAudience(event.target.value)}
+                    className="w-full border border-gray-300 bg-white px-4 py-4 outline-none transition focus:border-blue-600"
+                    placeholder="Кого планируете интервьюировать?"
+                    maxLength={500}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold">
+                    Цель исследования *
+                  </span>
+
+                  <textarea
+                    value={goal}
+                    onChange={(event) => setGoal(event.target.value)}
+                    className="min-h-28 w-full resize-y border border-gray-300 bg-white px-4 py-4 outline-none transition focus:border-blue-600"
+                    placeholder="Какой результат должно дать интервью?"
+                    maxLength={1500}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold">
+                    Текст гайда *
+                  </span>
+
+                  <textarea
+                    value={guide}
+                    onChange={(event) => setGuide(event.target.value)}
+                    className="min-h-[360px] w-full resize-y border border-gray-300 bg-white px-4 py-4 font-mono text-sm leading-7 outline-none transition focus:border-blue-600"
+                    placeholder={
+                      "Вставьте сюда вопросы и блоки гайда...\n\nБлок 1. Знакомство\n1. Расскажите немного о себе..."
+                    }
+                    maxLength={16000}
+                  />
+
+                  <div className="mt-2 flex justify-between gap-4 text-xs text-gray-400">
+                    <span>
+                      Для первого теста лучше использовать гайд до 16 000
+                      символов.
+                    </span>
+
+                    <span className="shrink-0">{guide.length} / 16 000</span>
+                  </div>
+                </label>
+
+                {error && (
+                  <div className="border border-red-200 bg-red-50 px-5 py-4 text-sm leading-6 text-red-700">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isAnalyzing || isImproving || simulationBusy}
+                  className="app-button min-h-16 w-full px-7 text-lg disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isAnalyzing
+                    ? "Тестируем гайд..."
+                    : "Провести тестирование →"}
+                </button>
+              </fieldset>
             </form>
           </section>
 
@@ -496,7 +573,9 @@ export default function GuideTestPage() {
                     <button
                       type="button"
                       onClick={handleImproveGuide}
-                      disabled={isImproving || Boolean(improvedGuide)}
+                      disabled={
+                        isImproving || simulationBusy || Boolean(improvedGuide)
+                      }
                       className="app-button min-h-16 px-5 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isImproving
@@ -509,7 +588,7 @@ export default function GuideTestPage() {
                     <button
                       type="button"
                       onClick={handleOpenSimulation}
-                      disabled={isImproving}
+                      disabled={isImproving || simulationBusy}
                       className="app-button-dark min-h-16 px-5 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Тестирование на синтетической выборке →
@@ -532,7 +611,10 @@ export default function GuideTestPage() {
 
                       <button
                         type="button"
-                        onClick={() => setShowSimulationSetup(false)}
+                        onClick={() => {
+                          simulationController.current?.abort();
+                          setShowSimulationSetup(false);
+                        }}
                         className="shrink-0 text-sm font-bold text-gray-500 transition hover:text-gray-900"
                       >
                         Закрыть
@@ -553,6 +635,7 @@ export default function GuideTestPage() {
                       <div className="mt-4 grid grid-cols-2 gap-3">
                         <button
                           type="button"
+                          disabled={simulationBusy}
                           onClick={() => setSimulationCount(3)}
                           className={
                             simulationCount === 3
@@ -565,6 +648,7 @@ export default function GuideTestPage() {
 
                         <button
                           type="button"
+                          disabled={simulationBusy}
                           onClick={() => setSimulationCount(5)}
                           className={
                             simulationCount === 5
@@ -594,11 +678,10 @@ export default function GuideTestPage() {
                             <input
                               type="radio"
                               name="simulation-guide"
+                              disabled={simulationBusy}
                               value="original"
                               checked={simulationGuide === "original"}
-                              onChange={() =>
-                                setSimulationGuide("original")
-                              }
+                              onChange={() => setSimulationGuide("original")}
                             />
 
                             <span className="font-bold">Исходный гайд</span>
@@ -614,11 +697,10 @@ export default function GuideTestPage() {
                             <input
                               type="radio"
                               name="simulation-guide"
+                              disabled={simulationBusy}
                               value="improved"
                               checked={simulationGuide === "improved"}
-                              onChange={() =>
-                                setSimulationGuide("improved")
-                              }
+                              onChange={() => setSimulationGuide("improved")}
                             />
 
                             <span className="font-bold">Улучшенный гайд</span>
@@ -643,10 +725,116 @@ export default function GuideTestPage() {
                     <button
                       type="button"
                       onClick={handleStartSimulation}
+                      disabled={simulationBusy}
                       className="app-button-dark mt-8 min-h-16 w-full px-6"
                     >
-                      Начать тестирование →
+                      {simulationBusy
+                        ? "Тестирование идёт…"
+                        : simulation
+                          ? "Повторить тестирование →"
+                          : "Начать тестирование →"}
                     </button>
+                    {simulationBusy && (
+                      <div className="mt-4 flex flex-wrap items-center gap-4">
+                        <p role="status" aria-live="polite">
+                          {simulationStatus}
+                        </p>
+                        <button
+                          type="button"
+                          className="text-sm font-bold underline"
+                          onClick={() => simulationController.current?.abort()}
+                        >
+                          Остановить тестирование
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {simulation && (
+                  <section
+                    aria-label="Результаты пробных интервью"
+                    className="border-t-2 border-blue-600 pt-8"
+                  >
+                    <p className="eyebrow">
+                      Синтетический пилот · {simulation.interviews.length}{" "}
+                      участников · {simulationVariant}
+                    </p>
+                    <h3 className="mt-4 text-3xl font-black">
+                      Как сработали вопросы
+                    </h3>
+                    <p className="mt-4 leading-7">{simulation.verdict}</p>
+                    <p className="mt-3 text-sm text-gray-600">
+                      Это проверка гайда на смоделированных ответах, а не
+                      исследование реальной аудитории. Результаты остаются на
+                      этой странице до её перезагрузки.
+                    </p>
+                    <div className="mt-6 space-y-5">
+                      {simulation.findings.map((finding, index) => (
+                        <section
+                          key={index}
+                          className="border-t border-gray-300 pt-5"
+                        >
+                          <h4 className="font-bold">{finding.question}</h4>
+                          <p className="mt-3 leading-7">{finding.finding}</p>
+                          <p className="mt-3 leading-7">
+                            <strong>Что улучшить.</strong>{" "}
+                            {finding.recommendation}
+                          </p>
+                        </section>
+                      ))}
+                    </div>
+                    {[
+                      ["Содержательные вопросы", simulation.workingQuestions],
+                      [
+                        "Вопросы для доработки",
+                        simulation.problematicQuestions,
+                      ],
+                    ].map(
+                      ([label, questions]) =>
+                        (questions as string[]).length > 0 && (
+                          <section key={label as string} className="mt-6">
+                            <h4 className="font-bold">{label}</h4>
+                            <ul className="mt-3 list-inside list-disc space-y-2">
+                              {(questions as string[]).map(
+                                (question, index) => (
+                                  <li key={index}>{question}</li>
+                                ),
+                              )}
+                            </ul>
+                          </section>
+                        ),
+                    )}
+                    <h4 className="mt-8 text-xl font-bold">Пробные интервью</h4>
+                    <div className="mt-4 space-y-5">
+                      {simulation.interviews.map((interview) => (
+                        <details
+                          key={interview.respondent.id}
+                          className="border-t border-gray-300 pt-4"
+                        >
+                          <summary className="cursor-pointer font-bold">
+                            {interview.respondent.name} ·{" "}
+                            {interview.respondent.age} лет ·{" "}
+                            {interview.respondent.city}
+                          </summary>
+                          <p className="mt-3 text-sm text-gray-600">
+                            {interview.respondent.occupation}.{" "}
+                            {interview.respondent.description}
+                          </p>
+                          {interview.turns.map((turn, index) => (
+                            <article
+                              key={index}
+                              className="mt-5 border-l-2 border-blue-600 pl-4"
+                            >
+                              <h5 className="font-bold">{turn.question}</h5>
+                              <p className="mt-3 whitespace-pre-wrap leading-7">
+                                {turn.answer}
+                              </p>
+                            </article>
+                          ))}
+                        </details>
+                      ))}
+                    </div>
                   </section>
                 )}
 
@@ -663,6 +851,7 @@ export default function GuideTestPage() {
                 <button
                   type="button"
                   onClick={resetResults}
+                  disabled={simulationBusy}
                   className="app-button-dark min-h-14 w-full px-6"
                 >
                   Проверить другой гайд

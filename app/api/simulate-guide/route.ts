@@ -1,6 +1,9 @@
 export const maxDuration = 300;
-import { aiFetch, getAIKey, getAIModel } from "../../lib/aiProvider";
-import { assertRussianAnswer, RUSSIAN_ANSWER_INSTRUCTION } from '../../lib/respondentLanguage';
+import { aiFetch, getAIKey, getInterviewModel } from "../../lib/aiProvider";
+import {
+  assertRussianAnswer,
+  RUSSIAN_ANSWER_INSTRUCTION,
+} from "../../lib/respondentLanguage";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -60,10 +63,8 @@ type RawSimulationResult = {
   problematicQuestions?: unknown;
 };
 
-const GROQ_API_URL =
-  "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
-const DEFAULT_MODEL = "openai/gpt-oss-20b";
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_GUIDE_LENGTH = 16_000;
 
@@ -93,41 +94,27 @@ function parseJsonContent(content: string): unknown {
     }
 
     try {
-      return JSON.parse(
-        cleaned.slice(firstBrace, lastBrace + 1)
-      );
+      return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
     } catch {
       return null;
     }
   }
 }
 
-function normalizeStringArray(
-  value: unknown,
-  maxItems: number
-): string[] {
+function normalizeStringArray(value: unknown, maxItems: number): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
-    .filter(
-      (item): item is string =>
-        typeof item === "string"
-    )
+    .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim().slice(0, 1_000))
     .filter(Boolean)
     .slice(0, maxItems);
 }
 
-function normalizeSimulation(
-  value: unknown,
-  respondentCount: number
-) {
-  if (
-    typeof value !== "object" ||
-    value === null
-  ) {
+function normalizeSimulation(value: unknown, respondentCount: number) {
+  if (typeof value !== "object" || value === null) {
     return null;
   }
 
@@ -139,10 +126,7 @@ function normalizeSimulation(
 
   const respondents = raw.respondents
     .map((item, index) => {
-      if (
-        typeof item !== "object" ||
-        item === null
-      ) {
+      if (typeof item !== "object" || item === null) {
         return null;
       }
 
@@ -150,14 +134,8 @@ function normalizeSimulation(
 
       const name = cleanText(respondent.name, 100);
       const city = cleanText(respondent.city, 120);
-      const occupation = cleanText(
-        respondent.occupation,
-        180
-      );
-      const description = cleanText(
-        respondent.description,
-        700
-      );
+      const occupation = cleanText(respondent.occupation, 180);
+      const description = cleanText(respondent.description, 700);
 
       const age =
         typeof respondent.age === "number"
@@ -184,16 +162,16 @@ function normalizeSimulation(
         description,
       };
     })
-    .filter(
-      (
-        respondent
-      ): respondent is NonNullable<
-        typeof respondent
-      > => Boolean(respondent)
+    .filter((respondent): respondent is NonNullable<typeof respondent> =>
+      Boolean(respondent),
     )
     .slice(0, respondentCount);
 
-  if (respondents.length === 0) {
+  if (
+    respondents.length !== respondentCount ||
+    new Set(respondents.map((p) => p.name.toLowerCase())).size !==
+      respondentCount
+  ) {
     return null;
   }
 
@@ -201,58 +179,37 @@ function normalizeSimulation(
     respondents.map((respondent) => [
       respondent.name.toLowerCase(),
       respondent,
-    ])
+    ]),
   );
 
   const interviews = Array.isArray(raw.interviews)
     ? raw.interviews
         .map((item) => {
-          if (
-            typeof item !== "object" ||
-            item === null
-          ) {
+          if (typeof item !== "object" || item === null) {
             return null;
           }
 
           const interview = item as RawInterview;
 
-          const respondentName = cleanText(
-            interview.respondentName,
-            100
-          );
+          const respondentName = cleanText(interview.respondentName, 100);
 
-          const respondent = respondentByName.get(
-            respondentName.toLowerCase()
-          );
+          const respondent = respondentByName.get(respondentName.toLowerCase());
 
-          if (
-            !respondent ||
-            !Array.isArray(interview.turns)
-          ) {
+          if (!respondent || !Array.isArray(interview.turns)) {
             return null;
           }
 
           const turns = interview.turns
             .map((turn) => {
-              if (
-                typeof turn !== "object" ||
-                turn === null
-              ) {
+              if (typeof turn !== "object" || turn === null) {
                 return null;
               }
 
-              const rawTurn =
-                turn as RawInterviewTurn;
+              const rawTurn = turn as RawInterviewTurn;
 
-              const question = cleanText(
-                rawTurn.question,
-                1_200
-              );
+              const question = cleanText(rawTurn.question, 1_200);
 
-              const answer = cleanText(
-                rawTurn.answer,
-                2_500
-              );
+              const answer = cleanText(rawTurn.answer, 2_500);
 
               if (!question || !answer) {
                 return null;
@@ -263,13 +220,7 @@ function normalizeSimulation(
                 answer,
               };
             })
-            .filter(
-              (
-                turn
-              ): turn is NonNullable<
-                typeof turn
-              > => Boolean(turn)
-            )
+            .filter((turn): turn is NonNullable<typeof turn> => Boolean(turn))
             .slice(0, 7);
 
           if (turns.length === 0) {
@@ -281,47 +232,27 @@ function normalizeSimulation(
             turns,
           };
         })
-        .filter(
-          (
-            interview
-          ): interview is NonNullable<
-            typeof interview
-          > => Boolean(interview)
+        .filter((interview): interview is NonNullable<typeof interview> =>
+          Boolean(interview),
         )
     : [];
 
   const findings = Array.isArray(raw.findings)
     ? raw.findings
         .map((item) => {
-          if (
-            typeof item !== "object" ||
-            item === null
-          ) {
+          if (typeof item !== "object" || item === null) {
             return null;
           }
 
           const finding = item as RawFinding;
 
-          const question = cleanText(
-            finding.question,
-            1_200
-          );
+          const question = cleanText(finding.question, 1_200);
 
-          const findingText = cleanText(
-            finding.finding,
-            1_500
-          );
+          const findingText = cleanText(finding.finding, 1_500);
 
-          const recommendation = cleanText(
-            finding.recommendation,
-            1_500
-          );
+          const recommendation = cleanText(finding.recommendation, 1_500);
 
-          if (
-            !question ||
-            !findingText ||
-            !recommendation
-          ) {
+          if (!question || !findingText || !recommendation) {
             return null;
           }
 
@@ -331,24 +262,25 @@ function normalizeSimulation(
             recommendation,
           };
         })
-        .filter(
-          (
-            finding
-          ): finding is NonNullable<
-            typeof finding
-          > => Boolean(finding)
+        .filter((finding): finding is NonNullable<typeof finding> =>
+          Boolean(finding),
         )
         .slice(0, 12)
     : [];
 
-  const verdict = cleanText(
-    raw.verdict,
-    2_500
-  );
+  const verdict = cleanText(raw.verdict, 2_500);
 
   if (
     !verdict ||
-    interviews.length === 0
+    interviews.length !== respondentCount ||
+    new Set(interviews.map((i) => i.respondent.id)).size !== respondentCount ||
+    interviews.some(
+      (i) =>
+        i.turns.length !== interviews[0].turns.length ||
+        i.turns.some(
+          (t, index) => t.question !== interviews[0].turns[index].question,
+        ),
+    )
   ) {
     return null;
   }
@@ -358,14 +290,8 @@ function normalizeSimulation(
     respondents,
     interviews,
     findings,
-    workingQuestions: normalizeStringArray(
-      raw.workingQuestions,
-      10
-    ),
-    problematicQuestions: normalizeStringArray(
-      raw.problematicQuestions,
-      10
-    ),
+    workingQuestions: normalizeStringArray(raw.workingQuestions, 10),
+    problematicQuestions: normalizeStringArray(raw.problematicQuestions, 10),
   };
 }
 
@@ -490,49 +416,45 @@ export async function POST(request: Request) {
     let body: SimulationRequest;
 
     try {
-      body =
-        (await request.json()) as SimulationRequest;
+      body = (await request.json()) as SimulationRequest;
     } catch {
       return NextResponse.json(
         {
-          error:
-            "Тело запроса должно содержать корректный JSON.",
+          error: "Тело запроса должно содержать корректный JSON.",
         },
         {
           status: 400,
-        }
+        },
       );
     }
 
+    if (
+      !body ||
+      typeof body !== "object" ||
+      (body.respondentCount !== 3 && body.respondentCount !== 5) ||
+      typeof body.guide !== "string" ||
+      body.guide.length > MAX_GUIDE_LENGTH
+    )
+      return NextResponse.json(
+        { error: "Выберите 3 или 5 участников и гайд до 16 000 символов." },
+        { status: 400 },
+      );
     const title = cleanText(body.title, 180);
     const topic = cleanText(body.topic, 500);
-    const audience = cleanText(
-      body.audience,
-      500
-    );
+    const audience = cleanText(body.audience, 500);
     const goal = cleanText(body.goal, 1_500);
-    const guide = cleanText(
-      body.guide,
-      MAX_GUIDE_LENGTH
-    );
+    const guide = cleanText(body.guide, MAX_GUIDE_LENGTH);
 
-    const respondentCount =
-      body.respondentCount === 5 ? 5 : 3;
+    const respondentCount = body.respondentCount === 5 ? 5 : 3;
 
-    if (
-      !topic ||
-      !audience ||
-      !goal ||
-      !guide
-    ) {
+    if (!topic || !audience || !goal || !guide) {
       return NextResponse.json(
         {
-          error:
-            "Не переданы тема, аудитория, цель или текст гайда.",
+          error: "Не переданы тема, аудитория, цель или текст гайда.",
         },
         {
           status: 400,
-        }
+        },
       );
     }
 
@@ -546,20 +468,14 @@ export async function POST(request: Request) {
         },
         {
           status: 500,
-        }
+        },
       );
     }
 
     const model =
-      cleanText(
-        process.env.GROQ_SIMULATION_MODEL,
-        150
-      ) ||
-      cleanText(
-        process.env.GROQ_GUIDE_MODEL,
-        150
-      ) ||
-      DEFAULT_MODEL;
+      cleanText(process.env.GROQ_SIMULATION_MODEL, 150) ||
+      cleanText(process.env.GROQ_GUIDE_MODEL, 150) ||
+      getInterviewModel();
 
     const controller = new AbortController();
 
@@ -570,50 +486,49 @@ export async function POST(request: Request) {
     let groqResponse: Response;
 
     try {
-      groqResponse = await aiFetch(GROQ_API_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: getAIModel(model),
-          temperature: 0.75,
-          top_p: 0.9,
-          max_completion_tokens:
-            respondentCount === 5
-              ? 4_500
-              : 3_200,
-          response_format: {
-            type: "json_object",
+      groqResponse = await aiFetch(
+        GROQ_API_URL,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
           },
-          messages: [
-            {
-              role: "system",
-              content:
-                "Ты профессиональный исследователь качественных методов. Ты моделируешь пилотные глубинные интервью и проверяешь работу гайда. Возвращай только корректный JSON. " + RUSSIAN_ANSWER_INSTRUCTION,
+          cache: "no-store",
+          signal: AbortSignal.any([request.signal, controller.signal]),
+          body: JSON.stringify({
+            model,
+            temperature: 0.75,
+            top_p: 0.9,
+            max_completion_tokens: respondentCount === 5 ? 4_500 : 3_200,
+            response_format: {
+              type: "json_object",
             },
-            {
-              role: "user",
-              content: buildPrompt({
-                title,
-                topic,
-                audience,
-                goal,
-                guide,
-                respondentCount,
-              }),
-            },
-          ],
-        }),
-      });
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Ты профессиональный исследователь качественных методов. Ты моделируешь пилотные глубинные интервью и проверяешь работу гайда. Возвращай только корректный JSON. " +
+                  RUSSIAN_ANSWER_INSTRUCTION,
+              },
+              {
+                role: "user",
+                content: buildPrompt({
+                  title,
+                  topic,
+                  audience,
+                  goal,
+                  guide,
+                  respondentCount,
+                }),
+              },
+            ],
+          }),
+        },
+        { model },
+      );
     } catch (requestError) {
-      if (
-        requestError instanceof Error &&
-        requestError.name === "AbortError"
-      ) {
+      if (requestError instanceof Error && requestError.name === "AbortError") {
         return NextResponse.json(
           {
             error:
@@ -621,7 +536,7 @@ export async function POST(request: Request) {
           },
           {
             status: 504,
-          }
+          },
         );
       }
 
@@ -630,96 +545,76 @@ export async function POST(request: Request) {
       clearTimeout(timeoutId);
     }
 
-    const rawResponse =
-      await groqResponse.text();
+    const rawResponse = await groqResponse.text();
 
     let groqData: GroqResponse;
 
     try {
-      groqData = JSON.parse(
-        rawResponse
-      ) as GroqResponse;
+      groqData = JSON.parse(rawResponse) as GroqResponse;
     } catch {
-      console.error(
-        "Сервис генерации вернул некорректный ответ:",
-        rawResponse
-      );
-
       return NextResponse.json(
         {
-          error:
-            "Сервис генерации вернул ответ в неожиданном формате.",
+          error: "Сервис генерации вернул ответ в неожиданном формате.",
         },
         {
           status: 502,
-        }
+        },
       );
     }
 
     if (!groqResponse.ok) {
-      const groqError = cleanText(
-        groqData.error?.message,
-        1_500
-      );
-
-      console.error(
-        "Ошибка Groq:",
-        groqResponse.status,
-        groqError
-      );
+      const groqError = cleanText(groqData.error?.message, 1_500);
 
       if (groqResponse.status === 429) {
         return NextResponse.json(
           {
-            error:
-              "Лимит сервиса генерации временно превышен. Попробуйте выбрать 3 респондентов или сократить гайд.",
+            error: /Groq|OpenRouter/.test(groqError)
+              ? groqError
+              : "Лимит сервиса генерации временно превышен. Повторите позже.",
           },
           {
             status: 429,
-          }
+            headers: Object.fromEntries(
+              ["Retry-After", "X-AI-Quota"].flatMap((name) =>
+                groqResponse.headers.has(name)
+                  ? [[name, groqResponse.headers.get(name)!]]
+                  : [],
+              ),
+            ),
+          },
         );
       }
 
       return NextResponse.json(
         {
-          error:
-            groqError ||
-            `Сервис генерации вернул ошибку ${groqResponse.status}.`,
+          error: /Groq|OpenRouter/.test(groqError)
+            ? groqError
+            : "Сервис генерации временно недоступен. Повторите попытку.",
         },
         {
           status: groqResponse.status,
-        }
+        },
       );
     }
 
-    const content =
-      groqData.choices?.[0]?.message?.content;
+    const content = groqData.choices?.[0]?.message?.content;
 
     if (!content) {
       return NextResponse.json(
         {
-          error:
-            "Модель не вернула результат симуляции.",
+          error: "Модель не вернула результат симуляции.",
         },
         {
           status: 502,
-        }
+        },
       );
     }
 
     const parsed = parseJsonContent(content);
 
-    const result = normalizeSimulation(
-      parsed,
-      respondentCount
-    );
+    const result = normalizeSimulation(parsed, respondentCount);
 
     if (!result) {
-      console.error(
-        "Не удалось нормализовать симуляцию:",
-        content
-      );
-
       return NextResponse.json(
         {
           error:
@@ -727,24 +622,21 @@ export async function POST(request: Request) {
         },
         {
           status: 502,
-        }
+        },
       );
     }
 
-    for(const interview of result.interviews) for(const turn of interview.turns) assertRussianAnswer(turn.answer,`${topic} ${guide}`);
+    for (const interview of result.interviews)
+      for (const turn of interview.turns)
+        assertRussianAnswer(turn.answer, `${topic} ${guide}`);
     return NextResponse.json({
       result,
       meta: {
-        model: getAIModel(model),
+        model,
         respondentCount,
       },
     });
   } catch (error) {
-    console.error(
-      "Ошибка /api/simulate-guide:",
-      error
-    );
-
     return NextResponse.json(
       {
         error:
@@ -754,7 +646,7 @@ export async function POST(request: Request) {
       },
       {
         status: 500,
-      }
+      },
     );
   }
 }
