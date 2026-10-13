@@ -67,11 +67,11 @@ export default function ResearchPage() {
             <span className="h-3 w-3 rounded-full bg-blue-600" />
 
             <span className="text-sm font-black tracking-[-0.03em]">
-              SYNTHETIC PLATFORM
+              SYNTH RESPONDENTS
             </span>
           </div>
 
-          <span className="eyebrow">02 / RESEARCH</span>
+          <span className="eyebrow">02 / ИССЛЕДОВАНИЕ</span>
         </header>
 
         <div

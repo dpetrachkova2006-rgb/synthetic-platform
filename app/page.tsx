@@ -1,50 +1,258 @@
-'use client';
-
-import Link from 'next/link';
-import { ArrowRight, Check, FileText, MessageCircle, Users } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import StudyMethodCards from './components/StudyMethodCards';
-import { readStudies, TYPE_LABELS } from './lib/study';
-
+"use client";
+import Link from "next/link";
+import Image from "next/image";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import StudyMethodCards from "./components/StudyMethodCards";
+import { InkArrow, ReportBooklets, Scribble } from "./components/EditorialArt";
+import { readStudies, TYPE_LABELS } from "./lib/study";
 export default function Home() {
-  const [latest, setLatest] = useState<{ topic: string; href: string; type: string } | null>(null);
+  const [latest, setLatest] = useState<{
+    topic: string;
+    href: string;
+    type: string;
+  } | null>(null);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        const study = readStudies().at(-1);
-        if (study) setLatest({ topic: study.topic, type: TYPE_LABELS[study.type], href: study.type === 'quantitative' && study.workflow !== 'survey' ? '/studies' : `/study?id=${study.researchId}` });
+        const s = readStudies().at(-1);
+        if (s)
+          setLatest({
+            topic: s.topic,
+            type: TYPE_LABELS[s.type],
+            href:
+              s.type === "quantitative" && s.workflow !== "survey"
+                ? "/studies"
+                : `/study?id=${s.researchId}`,
+          });
         else {
-          const topic = localStorage.getItem('research_topic');
-          if (topic) setLatest({ topic, href: '/map', type: 'Сохранённое исследование' });
+          const topic = localStorage.getItem("research_topic");
+          if (topic)
+            setLatest({
+              topic,
+              href: "/map",
+              type: "Сохранённое исследование",
+            });
         }
-      } catch { /* Existing projects are still available from the navigation. */ }
+      } catch {}
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
-
-  return <main className="mx-auto w-full min-w-0 max-w-[1280px] px-5 py-8 sm:px-10 sm:py-12">
-    <section className="home-hero">
-      <div className="home-hero__copy">
-        <p className="eyebrow">Платформа синтетических респондентов</p>
-        <h1>Проверьте гипотезу.<br/><span>Поймите причины.</span></h1>
-        <p className="mt-6 max-w-lg text-base leading-7 text-gray-700 sm:text-lg">Задайте исследовательский вопрос, получите ответы смоделированных участников и соберите понятный отчёт.</p>
-        <div className="mt-8 flex flex-wrap items-center gap-4"><a className="app-button inline-flex min-h-12 items-center gap-3 px-6" href="#research-methods">Выбрать метод <ArrowRight size={18}/></a><Link className="text-sm font-semibold text-gray-700 hover:text-blue-700" href="/studies">Мои исследования →</Link></div>
-      </div>
-      <div className="home-process hidden md:block" aria-label="Как проходит исследование">
-        <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase tracking-wider text-blue-700">От вопроса к выводам</span><span className="h-2 w-2 rounded-full bg-blue-600"/></div>
-        <div className="home-process__steps"><div><Users size={18}/><span>Выборка</span></div><i/><div><MessageCircle size={18}/><span>Ответы</span></div><i/><div><FileText size={18}/><span>Отчёт</span></div></div>
-        <div className="home-process__paper">
-          <div className="flex items-center justify-between"><p className="font-bold">Всё исследование — в одном месте</p><Check size={18} className="shrink-0 text-blue-600"/></div>
-          <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_1.1fr]"><div aria-hidden="true" className="space-y-3"><div className="home-process__bar w-4/5"/><div className="home-process__bar w-3/5 opacity-60"/><div className="home-process__bar w-2/5 opacity-30"/></div><p className="border-l-2 border-blue-200 pl-4 text-sm leading-6 text-gray-600">Распределения ответов, цитаты участников и выводы для вашей гипотезы.</p></div>
-          <div className="mt-6 border-t border-gray-100 pt-4 text-xs text-gray-500">Итоговый отчёт можно посмотреть и скачать в PDF</div>
+  return (
+    <main className="synth-home">
+      <section className="synth-hero" aria-labelledby="home-title">
+        <div className="synth-hero-copy">
+          <h1 id="home-title">
+            <span>ПРОВЕРЯЙТЕ</span>
+            <span>ИДЕИ.</span>
+            <span className="ink">ПОНИМАЙТЕ</span>
+            <span className="ink">ЛЮДЕЙ.</span>
+          </h1>
+          <Scribble className="hero-underline" />
+          <p className="hero-description">
+            Задайте исследовательский вопрос,
+            <br className="desktop-break" /> получите ответы смоделированных
+            участников
+            <br className="desktop-break" /> и соберите понятный отчёт.
+          </p>
+          <div className="hero-action">
+            <Link className="app-button" href="/new-study">
+              Создать исследование <ArrowUpRight size={21} />
+            </Link>
+            <span className="hand-note hero-action-note">
+              <InkArrow />
+              Быстро
+              <br />
+              гибко
+              <br />с глубиной
+            </span>
+          </div>
         </div>
-      </div>
-    </section>
-    <section id="research-methods" className="scroll-mt-8 pt-10 sm:pt-12">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-2"><h2 className="text-2xl font-bold tracking-tight sm:text-3xl">С чего начнём?</h2><p className="text-sm text-gray-600">Выберите метод под свой вопрос</p></div>
-      <StudyMethodCards/>
-    </section>
-    {latest && <Link href={latest.href} className="home-resume mt-6"><div className="min-w-0"><p className="text-xs text-gray-500">Продолжить · {latest.type}</p><p className="mt-1 truncate font-semibold">{latest.topic}</p></div><ArrowRight size={20} className="shrink-0 text-blue-600"/></Link>}
-    <div className="mt-8 flex flex-wrap items-start justify-between gap-4 text-xs leading-5 text-gray-500"><p className="max-w-2xl">Ответы создаёт модель. Используйте их для проверки идей и подготовки исследования: они не заменяют ответы реальных людей.</p><Link href="/guide-test" className="shrink-0 font-semibold text-gray-700 hover:text-blue-700">Проверить вопросы интервью ↗</Link></div>
-  </main>;
+        <div className="synth-hero-art">
+          <Image
+            src="/design/crowd-collage.webp"
+            alt="Чёрно-белый коллаж с силуэтами людей и синими печатными слоями"
+            width={1000}
+            height={1250}
+            priority
+            sizes="(max-width: 700px) 100vw, 52vw"
+          />
+          <span className="hand-note hero-top-note">
+            Синтетические
+            <br />
+            респонденты
+            <br />
+            для реальных
+            <br />
+            вопросов
+            <InkArrow />
+          </span>
+          <span className="paper-note hero-side-note">
+            Быстрые
+            <br />
+            инсайты
+            <br />
+            для больших
+            <br />
+            решений
+          </span>
+          <span className="paper-note hero-bottom-note">
+            Идеи
+            <br />
+            продукты
+            <br />
+            коммуникации
+            <br />
+            сервисы
+            <br />
+            бренды
+          </span>
+        </div>
+      </section>
+      <section id="research-methods" className="home-methods">
+        <div className="section-strip">
+          <span className="section-number">01</span>
+          <h2>
+            Выберите подход
+            <br />и получите инсайты
+          </h2>
+          <i />
+          <span className="strip-note">
+            Три способа
+            <br />
+            одна платформа
+          </span>
+          <div className="strip-arrows" aria-hidden="true">
+            <ArrowRight className="rotate-180" size={23} />
+            <ArrowRight size={23} />
+          </div>
+        </div>
+        <StudyMethodCards />
+        {latest && (
+          <Link className="home-resume" href={latest.href}>
+            <span>
+              <small>Продолжить · {latest.type}</small>
+              <strong>{latest.topic}</strong>
+            </span>
+            <ArrowRight size={22} />
+          </Link>
+        )}
+      </section>
+      <section className="home-data" id="data-basis">
+        <div className="home-data-art">
+          <Image
+            src="/design/earth-collage.webp"
+            alt="Коллаж Земли, печатных текстур и картографической сетки"
+            width={1200}
+            height={800}
+            sizes="(max-width: 700px) 100vw, 55vw"
+          />
+        </div>
+        <div className="home-data-copy">
+          <span className="section-number">02</span>
+          <span className="data-margin-note">
+            Синтетические
+            <br />
+            респонденты,
+            <br />
+            построенные
+            <br />
+            на данных
+          </span>
+          <h2>
+            ОСНОВА —<br />
+            <span>РЕАЛЬНЫЕ ДАННЫЕ</span>
+          </h2>
+          <p>
+            Мы используем открытые исследования, статистику и проверенные
+            источники. Статистическая основа помогает формировать выборку, а
+            ответы участников моделирует нейросеть.
+          </p>
+          <a
+            className="inline-link"
+            href="#data-method"
+            onClick={() => {
+              const detail = document.getElementById(
+                "data-method",
+              ) as HTMLDetailsElement | null;
+              if (detail) detail.open = true;
+            }}
+          >
+            Узнать больше о данных <ArrowRight size={16} />
+          </a>
+          <details id="data-method">
+            <summary>Метод и источники</summary>
+            <p>
+              Для статистической выборки используются демографические данные
+              Всемирного банка и ООН за 2024 год для возраста 20–79 лет. Можно
+              выбрать моделирование без статистической калибровки. Основа и
+              источники каждого исследования указаны в его отчёте.
+            </p>
+            <a
+              className="inline-link"
+              href="https://data.worldbank.org/indicator/SP.POP.TOTL"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Всемирный банк ↗
+            </a>
+          </details>
+          <div className="data-materials">
+            <span className="contour-paper" aria-hidden="true" />
+            <p>
+              Открытые исследования
+              <br />
+              Статистика
+              <br />
+              Социальные тренды
+              <br />
+              Экспертные материалы
+            </p>
+            <Scribble />
+          </div>
+        </div>
+      </section>
+      <section className="home-report">
+        <div className="home-report-copy">
+          <span className="section-number">03</span>
+          <h2>
+            ПОЛУЧАЙТЕ
+            <br />
+            <span>ПОНЯТНЫЙ ОТЧЁТ</span>
+          </h2>
+          <p>
+            После исследования мы собираем ваши результаты в структурированный
+            PDF-отчёт: ключевые выводы, цитаты, графики и рекомендации.
+          </p>
+          <Link className="app-button app-button--black" href="/report-example">
+            Посмотреть пример отчёта <ArrowRight size={20} />
+          </Link>
+          <span className="hand-note report-pdf-note">
+            PDF
+            <InkArrow />
+          </span>
+        </div>
+        <ReportBooklets />
+      </section>
+      <aside className="synth-disclaimer">
+        <span className="disclaimer-star" aria-hidden="true">
+          *
+        </span>
+        <h2>
+          СИНТЕТИЧЕСКИЕ ОТВЕТЫ
+          <br />
+          НЕ ЗАМЕНЯЮТ РЕАЛЬНЫХ ЛЮДЕЙ.
+        </h2>
+        <p>
+          Наши респонденты — это модель, основанная на данных. Они помогают
+          быстро проверять идеи и находить направления, но не заменяют
+          полноценные исследования с живыми людьми.
+        </p>
+        <span className="hand-note disclaimer-note">
+          Дополнение,
+          <br />а не замена.
+        </span>
+      </aside>
+    </main>
+  );
 }

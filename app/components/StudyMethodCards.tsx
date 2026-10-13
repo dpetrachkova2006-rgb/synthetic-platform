@@ -1,20 +1,50 @@
-import Link from 'next/link';
-import { ArrowUpRight, ChartColumn, Layers, MessagesSquare } from 'lucide-react';
-
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { MethodArt } from "./EditorialArt";
 const methods = [
-  { href: '/research', title: 'Количественное', question: 'Сколько и как часто?', text: 'Узнайте, как распределяются ответы в большой группе.', path: 'Выборка → ответы → отчёт', icon: ChartColumn },
-  { href: '/study?type=qualitative', title: 'Качественное', question: 'Почему люди так думают?', text: 'Изучите опыт, мотивы и сомнения через глубинные интервью.', path: 'Участники → интервью → отчёт', icon: MessagesSquare },
-  { href: '/study?type=mixed', title: 'Смешанное', question: 'Что происходит и почему?', text: 'Сначала проведите опрос, затем уточните его результаты в интервью.', path: 'Опрос → отбор → интервью → отчёт', icon: Layers },
+  {
+    type: "quantitative" as const,
+    href: "/research",
+    title: "Количественные",
+    question: "Сколько и как часто?",
+    text: "Проверьте гипотезы на большой выборке синтетических респондентов. Получайте наглядные метрики, сегменты и статистику.",
+    path: "Выборка → ответы → отчёт",
+  },
+  {
+    type: "qualitative" as const,
+    href: "/study?type=qualitative",
+    title: "Качественные",
+    question: "Почему люди так думают?",
+    text: "Проводите глубинные интервью с ИИ-респондентами. Исследуйте мотивы, барьеры и потребности в свободном диалоге.",
+    path: "Участники → интервью → отчёт",
+  },
+  {
+    type: "mixed" as const,
+    href: "/study?type=mixed",
+    title: "Смешанные",
+    question: "Что происходит и почему?",
+    text: "Объединяйте силу чисел и глубину понимания. Сначала проведите опрос, затем уточните результаты в интервью.",
+    path: "Опрос → отбор → интервью → отчёт",
+  },
 ];
-
 export default function StudyMethodCards() {
-  return <div className="grid gap-4 md:grid-cols-3">{methods.map(({ href, title, question, text, path, icon: Icon }) =>
-    <Link href={href} key={href} className="method-card group">
-      <div className="flex items-center justify-between"><span className="method-card__icon"><Icon size={23} strokeWidth={1.7}/></span><ArrowUpRight size={22} className="text-gray-400 transition-transform group-hover:-translate-y-1 group-hover:translate-x-1"/></div>
-      <h3 className="mt-6 text-xl font-bold tracking-tight">{title}</h3>
-      <p className="mt-3 font-semibold text-blue-700">{question}</p>
-      <p className="mt-2 text-sm leading-6 text-gray-700">{text}</p>
-      <p className="mt-auto pt-6 text-xs leading-5 text-gray-500">{path}</p>
-    </Link>
-  )}</div>;
+  return (
+    <div className="study-methods">
+      {methods.map((m, i) => (
+        <Link
+          href={m.href}
+          key={m.type}
+          className={`method-card method-card--${m.type}`}
+        >
+          <MethodArt type={m.type} />
+          <span className="method-index">0{i + 1}</span>
+          <h3>{m.title}</h3>
+          <p className="method-question">{m.question}</p>
+          <p className="method-description">{m.text}</p>
+          <span className="method-route">{m.path}</span>
+          <ArrowRight className="method-arrow" size={22} />
+        </Link>
+      ))}
+    </div>
+  );
 }

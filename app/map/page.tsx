@@ -848,12 +848,12 @@ async function generateInterviewForRespondent(
             <span className="h-3 w-3 rounded-full bg-blue-600" />
 
             <span className="text-sm font-black tracking-[-0.03em]">
-              SYNTHETIC PLATFORM
+              SYNTH RESPONDENTS
             </span>
           </Link>
 
           <span className="eyebrow">
-            04 / RESULTS
+            04 / РЕЗУЛЬТАТЫ
           </span>
         </header>
 

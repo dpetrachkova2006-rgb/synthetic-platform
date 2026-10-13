@@ -191,6 +191,7 @@ function RespondentsContent() {
 
 
     <main className="
+      legacy-respondents
       min-h-screen
       bg-gradient-to-b
       from-white

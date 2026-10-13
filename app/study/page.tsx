@@ -4,6 +4,7 @@ import { analysisSignature } from '../lib/reportInsights';
 import { compactProfile, estimateTokens, INTERVIEW_BATCH, nextGroqInterviewBatch, surveyBatchSize } from '../lib/researchEconomy';
 import { providerRetryDelay, waitForProvider } from '../lib/providerPause';
 import PDFReportButton from '../components/PDFReportButton';
+import { MethodArt, InkArrow } from '../components/EditorialArt';
 import ReportPreview from '../components/ReportPreview';
 import StageChecklist from '../components/StageChecklist';
 import InterviewStage from '../components/InterviewStage';
@@ -228,7 +229,7 @@ function StudyContent() {
   const field = 'app-input mt-2';
   const button = 'app-button min-h-12 px-5';
   if (!ready) return <main className="p-10">Загрузка проектов…</main>;
-  return <main className="min-h-screen px-5 py-8 sm:px-10">
+  return <main className="study-workspace min-h-screen px-5 py-8 sm:px-10">
     <section className="site-surface mx-auto max-w-[1380px] overflow-hidden">
       <div className="p-6 sm:p-10">
         {error && study?.stage !== 2 && <p role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{error}</p>}
@@ -236,6 +237,7 @@ function StudyContent() {
         {!study ? <>
           <h1 className="text-3xl font-black">{TYPE_LABELS[type]}</h1>
           <p className="mt-3 text-gray-700">{type === 'mixed' ? 'Один проект: массовый опрос, отбор участников и интервью из той же выборки.' : type === 'qualitative' ? 'Сформируйте группу и проведите глубинные интервью.' : 'Подготовьте анкету, получите ответы и скачайте отчёт.'}</p>
+          <div className="study-draft-art" aria-hidden="true"><MethodArt type={type}/><span className="hand-note">Сначала тема.<br/>Потом — вопросы.<InkArrow/></span></div>
           <div className="mt-8 grid max-w-3xl gap-6">
             <label>Тип исследования<select className={field} value={type} onChange={e => setType(e.target.value as ResearchType)}><option value="quantitative">Количественное</option><option value="mixed">Смешанное</option><option value="qualitative">Качественное</option></select></label>
             <label>Тема<input className={field} maxLength={1000} value={topic} onChange={e => { setTopic(e.target.value); draft(e.target.value, question); }} /></label>

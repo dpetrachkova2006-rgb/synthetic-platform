@@ -47,6 +47,7 @@ function ResultsContent() {
   return (
 
     <main className="
+      legacy-results
       min-h-screen
       bg-gradient-to-b
       from-white
