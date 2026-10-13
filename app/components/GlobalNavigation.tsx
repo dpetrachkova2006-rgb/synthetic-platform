@@ -90,7 +90,6 @@ export default function GlobalNavigation() {
             ["/", "Главная"],
             ["/new-study", "Новое исследование"],
             ["/studies", "Мои исследования"],
-            ["/tools", "Инструменты"],
           ].map(([href, label]) => (
             <Link
               href={href}

@@ -10,10 +10,8 @@ export default function GlobalFooter() {
         <Link href="/">Главная</Link>
         <Link href="/new-study">Новое исследование</Link>
         <Link href="/studies">Мои исследования</Link>
-        <Link href="/tools">Инструменты</Link>
       </nav>
       <div>
-        <Link href="/guide-test">Тест гайда</Link>
         <Link href="/#data-basis">Метод и источники</Link>
       </div>
     </footer>
